@@ -61,7 +61,7 @@ fills it in 0x7F7380 (`rwDEVICESYSTEMSTANDARDS`): [4]=0x4CCE60 rasterCreate, [15
 | bytes | field | validated? |
 |---|---|---|
 | 12 | chunk hdr `0x16, len, libID` | type must be found by FindChunk; **libID must decode to version 0x34000..0x36003** (0x7ED337-0x7ED374); `len` unused |
-| 12 | STRUCT hdr `1, len, libID` | version same rule; **`len` is read into a 4-byte stack slot** (0x730FE1-0x730FEC, buffer at frame+4, `len` at +8, version at +0xC, return address at +0x10) → see TXD-STRUCTLEN |
+| 12 | STRUCT hdr `1, len, libID` | version same rule; **`len` is read into a 4-byte stack slot** (0x730FE1-0x730FEC, buffer at frame+4, `len` at +8, version at +0xC, return address at +0x10) → see TXD-02 |
 | 2 | `numTextures` u16 | none. 0 → empty dict. Larger than the real count → FindChunk hits EOF → LOAD-FAIL. Smaller → extra textures silently IGNORED |
 | 2 | `deviceId` u16 | **ignored by the game's reader** (stock reader 0x804C30 checks it; vanilla files carry 2 or 6) |
 | … | `numTextures` × Texture Native chunks (0x15) | each found with FindChunk(0x15) → any other chunk type in between is skipped by its length |
@@ -160,7 +160,7 @@ all others have rwFormat 0.
 * filter dword: 0x1106 (25159), 0x1102 (4409), 0x1101 (2589), 0x1206 (8), 0x2106 (1).
 * mipmapped textures always carry the full chain (`floor(log2(max(w,h)))+1`); **levels smaller than
   4×4 are stored with `size = 0`** (10065 such levels, e.g. a51.txd/dam_gencon levels 7,8) — the engine
-  simply skips them (they stay uninitialised, see TXD-LEVEL-SHORT).
+  simply skips them (they stay uninitialised, see TXD-16).
 * names ≤ 31 chars, charset `space # % & ' ( ) - 0-9 @ A-Z ] _ a-z`; 2171 textures have a mask
   name; no duplicate names inside one TXD; max 165 textures per TXD; biggest TXD 2.59 MB.
 
@@ -259,7 +259,7 @@ into the destination — a NULL destination faults.
 
 Every item cites the unchecked operation. IDs use the `TXD-` prefix.
 
-### TXD-STRUCTLEN — TXD STRUCT chunk length ≠ 4 (CRASH for len ≥ 13, LOAD-FAIL for 5..12)
+### TXD-02 — TXD STRUCT chunk length ≠ 4 (CRASH for len ≥ 13, LOAD-FAIL for 5..12)
 `RwTexDictionaryGtaStreamRead` 0x730FC0: `RwStreamRead(stream, frame+4, structLen)` into a 4-byte
 local. Frame: +4 buffer, +8 `structLen`, +0xC version, **+0x10 return address**. len 5..8 corrupts
 `structLen` → the `cmp eax,ecx` (0x730FF8, `ecx` reloaded from +8 AFTER the read) fails → returns 0
@@ -267,16 +267,16 @@ local. Frame: +4 buffer, +8 `structLen`, +0xC version, **+0x10 return address**.
 return address with file bytes → CRASH / control-flow hijack** at the `ret` 0x731002/0x73104B.
 (Same bug in the unused stock reader 0x804C30 and in `StartLoadTxd`'s 0x731070.) Vanilla: always 4.
 
-### TXD-VERSION — chunk stamps outside RW 3.4.0..3.6.0.3 (LOAD-FAIL)
+### TXD-01 — chunk stamps outside RW 3.4.0..3.6.0.3 (LOAD-FAIL)
 `RwStreamFindChunk` 0x7ED337-0x7ED374 rejects the found 0x16 / 0x15 / STRUCT chunk when the decoded
 version is < 0x34000 or > 0x36003 (RwErrorSet, returns 0). The native STRUCT is re-checked at
 0x4CD848-0x4CD85C. libID `0x1803FFFF` (= 3.6.0.3) is the safe value; old-style `0x00000310` stamps and
 3.7 stamps (`0x1C02xxxx`) fail.
 
-### TXD-PLATFORM — platformId ≠ 9 (LOAD-FAIL)
+### TXD-05 — platformId ≠ 9 (LOAD-FAIL)
 0x4CD87B `cmp dword [esp+0x38], 9` → return 0. (PS2 `'PS2\0'`, Xbox 5, D3D8 8 all rejected.)
 
-### TXD-LEVEL-OVERSIZE — a mip level's `size` larger than the D3D surface (CRASH-likely)
+### TXD-17 — a mip level's `size` larger than the D3D surface (CRASH-likely)
 Loop 0x4CDCA0-0x4CDCFD: `RwRasterLock(raster, level, WRITE)` → `RwStreamRead(stream, pBits, size)`.
 `size` is only compared with the number of bytes the stream returned (0x4CDCE5). Nothing compares it
 with `stride*rows` of the locked surface. Bytes beyond the level are written past the D3D managed
@@ -284,15 +284,15 @@ texture's system-memory copy → heap corruption → fault at a later `UnlockRec
 Expected bytes: DXT1 `max(1,⌈w/4⌉)·max(1,⌈h/4⌉)·8`, DXT2-5 `·16`; uncompressed `stride·h` with
 stride = `w·bpp/8` from the table (§1.4) for the level dims `max(1,w>>l)`.
 
-### TXD-LEVEL-SHORT — a mip level's `size` smaller than the surface (GARBAGE)
+### TXD-16 — a mip level's `size` smaller than the surface (GARBAGE)
 Same loop; a short `size` leaves the tail of the level uninitialised. The D3D texture is either
 fresh (undefined content) or recycled from `D3DTextureBuffer::Pop` 0x72FF60 (previous texture's
 pixels: the well-known "wrong mip" look). Vanilla itself stores `size=0` for levels < 4×4 (2×2, 1×1),
 so a validator must accept `size == 0` and only flag `0 < size < expected` as suspicious and
 `size > expected` as fatal. Same effect when the sum of level bytes ≠ STRUCT payload (see
-TXD-STRUCT-TRAILING).
+TXD-18).
 
-### TXD-NUMLEVELS-OVER — `numLevels` > levels the D3D texture actually has (CRASH when the extra level's size ≠ 0)
+### TXD-14 — `numLevels` > levels the D3D texture actually has (CRASH when the extra level's size ≠ 0)
 `D3DResourceSystem::CreateTexture` 0x730518 turns any `levels > 1` into 0 (= full chain
 `floor(log2(max(w,h)))+1`), so D3D never refuses; but the read loop runs `numLevels` times
 (0x4CDC86). For a level ≥ chain length `rwD3D9RasterLock` 0x4C9F90's `GetSurfaceLevel` fails →
@@ -301,41 +301,41 @@ returns 0 → `RwRasterLock` returns NULL (0x7FB2FF-0x7FB303) → `RwStreamRead(
 subsequent `RwRasterUnlock` on an unlocked raster returns 0 harmlessly (0x4CA299).
 Without the MIPMAP bit the texture has exactly 1 level, so **`numLevels > 1` crashes the same way**.
 
-### TXD-NUMLEVELS-UNDER — `numLevels` < full chain with MIPMAP set, or `numLevels == 0` (GARBAGE)
+### TXD-15 — `numLevels` < full chain with MIPMAP set, or `numLevels == 0` (GARBAGE)
 Full chain is always created (0x730518); unread levels stay undefined / recycled (see
-TXD-LEVEL-SHORT). Visible as random colours/other textures at distance with trilinear filtering.
+TXD-16). Visible as random colours/other textures at distance with trilinear filtering.
 `numLevels == 0` with MIPMAP → `levels = 0` → full chain, no level read → whole texture garbage;
 without MIPMAP → 1-level garbage texture.
 
-### TXD-STRUCT-TRAILING — bytes left in the STRUCT after the last level / extra levels (LOAD-FAIL)
+### TXD-18 — bytes left in the STRUCT after the last level / extra levels (LOAD-FAIL)
 The reader never seeks to the STRUCT end (no use of the length). The next `RwStreamFindChunk(0x15)`
 (0x730E75) interprets the leftover bytes as `{type,len,libID}` headers and skips `len` bytes each
 time → normally EOF → texture read NULL → dictionary destroyed → LOAD-FAIL. Also triggered by
-AUTOMIPMAP (TXD-AUTOMIP) and by writing 6 faces without the cube flag.
+AUTOMIPMAP (TXD-10) and by writing 6 faces without the cube flag.
 
-### TXD-ZERO-DIM — width or height == 0 (CRASH for uncompressed + d3dFormat 0 + numLevels ≥ 1)
+### TXD-09 — width or height == 0 (CRASH for uncompressed + d3dFormat 0 + numLevels ≥ 1)
 `rwD3D9RasterCreate` 0x4CCE60: `width==0 || height==0` → marks DONTALLOCATE, no D3D texture, returns
 1. Checks pass only if the stream's `d3dFormat == 0` (ext->d3dFormat stays 0). Then
 `rwD3D9RasterLock` 0x4C9FFE-0x4CA013: `eax = ext->texture (NULL)`, `mov edx,[eax]` → **CRASH**.
 Compressed path: `CreateTexture(0,…)` fails → clean LOAD-FAIL. With a real d3dFormat: clean
 LOAD-FAIL (d3dFormat mismatch).
 
-### TXD-RASTERTYPE — rasterType byte ≠ 4 (or 0)
+### TXD-06 — rasterType byte ≠ 4 (or 0)
 Type bits OR-ed into the raster flags (0x4CD8D6 / 0x4CDB17). 1 (ZBUFFER): depth surface created
 (0x4CCD70), lock jump table entry → fail → NULL → **CRASH** in `RwStreamRead(NULL)`. 3: same lock
 failure. 2 (CAMERA): the game's back buffer is locked and file bytes are copied into it
 (CRASH-likely on oversize). 5 (CAMERATEXTURE): render-target texture in DEFAULT pool (works by
 accident, not MANAGED). Extra bits (≥ 8) pollute `cFlags` (0x80 = DONTALLOCATE → uncompressed:
-no texture → lock NULL-deref as in TXD-ZERO-DIM when d3dFormat = 0).
+no texture → lock NULL-deref as in TXD-09 when d3dFormat = 0).
 
-### TXD-FORMAT-MISMATCH — rasterFormat nibble vs d3dFormat vs compressed flag (LOAD-FAIL, clean)
+### TXD-19 — rasterFormat nibble vs d3dFormat vs compressed flag (LOAD-FAIL, clean)
 Enforced by 0x4CDB92-0x4CDBC6: `rasterFormat == cFormat<<8` and `d3dFormat == ext->d3dFormat`.
 Uncompressed: d3dFormat must be the table value (§1.4) for the nibble; DXT fourcc without bit3 →
 mismatch. DXT with bit3: any nibble 1..6/0xA accepted (0x8500+DXT3 loads fine per the code); nibble
 0 fails (default format substituted at 0x4CC5C0 by *display* depth, then cFormat ≠ stream);
 nibbles 0xB..0xF fail (past the table). Bits in `rasterFormat & 0xFF` or ≥ 0x10000 → mismatch.
 
-### TXD-PALETTE — PAL4 / PAL8 (LOAD-FAIL on today's GPUs; CRASH in one combination)
+### TXD-07 — PAL4 / PAL8 (LOAD-FAIL on today's GPUs; CRASH in one combination)
 `rwD3D9SetRasterFormat` 0x4CC5C0: PAL4 (0x4000) with a format nibble → `return 0`; PAL8 (0x2000) →
 `CheckDeviceFormat(D3DFMT_P8=0x29)` → no modern D3D9 driver supports P8 → `RwRasterCreate` NULL →
 LOAD-FAIL (whole TXD). `_rwD3D9RasterConvertToNonPalettized` 0x4CD250 is NOT on this path (its
@@ -344,18 +344,18 @@ device: PAL8 uncompressed works (palette block 0x404 from 0x4CB7C0); **PAL8 + co
 palette pointer NULL → `RwRasterLockPalette` returns NULL → `RwStreamRead(stream, NULL, 0x400)`
 0x4CDC1C → CRASH**. Both PAL4 and PAL8 set → PAL4 wins (0x4CDBCC first) but creation fails earlier.
 
-### TXD-AUTOMIP — rasterFormat bit 0x1000 (AUTOMIPMAP) and/or flags bit 2 (LOAD-FAIL, device-dependent)
+### TXD-10 — rasterFormat bit 0x1000 (AUTOMIPMAP) and/or flags bit 2 (LOAD-FAIL, device-dependent)
 With 0x9000 set and `CheckDeviceFormat(usage AUTOGENMIPMAP)` OK (0x4CBF8A / 0x4CC020), `ext->
 automipmapgen=1` → **only ONE level is read** (0x4CDC76-0x4CDC84) → remaining level data stays in
-the stream → TXD-STRUCT-TRAILING → LOAD-FAIL. If the device cannot autogen: flags bit 2 → fail
+the stream → TXD-18 → LOAD-FAIL. If the device cannot autogen: flags bit 2 → fail
 (0x4CDB88); bit 2 clear → loads normally. DXT formats generally return D3DOK_NOAUTOGEN → normal.
 
-### TXD-CUBE — flags bit 1 (cube map)
+### TXD-11 — flags bit 1 (cube map)
 Compressed cube: 6 faces × levels read (face nibble `ext+9` bumped at 0x4CDD03); requires caps
 `0xC9BF44 & 0x30000` when levels > 1 else fail. Uncompressed cube: **never loads** (ext->d3dFormat not
 written → 0x4CDBA3 mismatch). No vanilla cube maps; the exporter must never set the bit.
 
-### TXD-DIMS — non power-of-two / above device caps (LOAD-FAIL, clean; device-dependent)
+### TXD-08 — non power-of-two / above device caps (LOAD-FAIL, clean; device-dependent)
 Uncompressed: 0x7FED70 clamps to `MaxTextureWidth/Height` (0xC9BF58/5C) and rounds down to pow2 when
 `TextureCaps & POW2` (0x2) is set (always when mipmapped; without mipmaps only if
 `NONPOW2CONDITIONAL` 0x100 is absent), squares when `SQUAREONLY` 0x20 → raster dims ≠ stream dims →
@@ -364,13 +364,13 @@ have no POW2 caps, so non-pow2 loads there and fails on old ones. DXT below 4×4
 1×1, or mip tails) is legal for D3D9 (one block; `LockRect` pitch = 8/16); the surface holds one
 full block, so `size` may be 8/16 (our exporter) or 0 (vanilla).
 
-### TXD-NAME-LEN — texture name ≥ 32 chars / no NUL (IGNORED → texture unreachable)
+### TXD-22 — texture name ≥ 32 chars / no NUL (IGNORED → texture unreachable)
 `RwTextureSetName` 0x7F38A0: strncpy 32, `strlen(src) >= 0x20` → `name[31] = 0`, RwErrorSet
 (0x8000001E). The DFF material asks for the full (≤127-char) name via `RwTextureRead` 0x7F3AC0 →
 `TxdStoreFindCB` → case-insensitive compare → a 32+-char name never matches → material renders
 untextured. Rule: 1..31 chars, identical bytes (case-insensitive) in DFF and TXD.
 
-### TXD-NAME-DUP — duplicate names in one TXD (IGNORED, last wins)
+### TXD-23 — duplicate names in one TXD (IGNORED, last wins)
 Head insertion 0x7F39B6 + head-first search 0x7F39FB → the LAST occurrence in the file is used;
 both stay resident. Names differing only in case are duplicates (0x7F3A23-0x7F3A3D).
 
@@ -380,36 +380,36 @@ both stay resident. Names differing only in case are duplicates (0x7F3A23-0x7F3A
 0x74DD30 stores `material->texture = NULL` and continues → rendered with material colour × vertex
 colour, `RwD3D9SetTexture(NULL)` (white-looking surface). No crash.
 
-### TXD-ALPHA-FLAG — hasAlpha flag vs data (GARBAGE-visual)
+### TXD-20 — hasAlpha flag vs data (GARBAGE-visual)
 Compressed: `ext->alpha = flags&1` (0x4CD9A9/0x4CDA16) → `_rwD3D9RWSetRasterStage` 0x7FDCFC enables
 ALPHABLEND (0x1B) + ALPHATEST (0x0F) via the deferred render-state cache and marks the texture as
 "has alpha". DXT3/DXT5 with flag 0 → drawn opaque; DXT1 punch-through with flag 0 → holes drawn black;
 DXT1 with flag 1 → alpha test (1-bit) works and the mesh is treated as alpha (sorting cost).
 Uncompressed: flag IGNORED, alpha comes from the table (1555/4444/8888 = alpha, 565/888/LUM8 = none).
 
-### TXD-FILTER — filter byte ∉ 1..6 / addressing nibbles ∉ 1..4 (GARBAGE, mild)
+### TXD-12 — filter byte ∉ 1..6 / addressing nibbles ∉ 1..4 (GARBAGE, mild)
 Not checked at load (0x4CDD3D-0x4CDD7C). `RwD3D9SetTexture` indexes the 8-entry filter table and the
 5-entry address table without bounds (0x7FDEAC, 0x7FDEEF, 0x7FDF6A/0x7FDF83) → arbitrary
 `SetSamplerState` values (D3D retail ignores invalid ones → stale state). 0 (NA) maps to invalid
 D3D values too. Vanilla: 0x1106 / 0x1102 / 0x1101.
 
-### TXD-COUNT — `numTextures` vs real chunk count
+### TXD-04 — `numTextures` vs real chunk count
 Larger → FindChunk EOF → LOAD-FAIL. Smaller → later textures never loaded (IGNORED). No upper bound
 besides u16 (vanilla max 165).
 
-### TXD-POOL — more than 5000 TXD slots (CRASH)
+### TXD-27 — more than 5000 TXD slots (CRASH)
 `CTxdStore::AddTxdSlot` 0x731C80: `CPool::New` 0x731B80 returns NULL when full (0x731BE3) →
 `*puVar1 = 0` (0x731C8C) → write to address 0 → **CRASH**. Slots are consumed by every distinct txd
 name in IDE `objs/tobj/anim/peds/cars/weap/hier` lines, every `.txd` IMG entry
 (`LoadCdDirectory` 0x5B62AE), every `txdp` parent, vehicle remap TXDs and ~20 engine-created ones.
 Vanilla ≈ 3990 → roughly 1000 free.
 
-### TXD-IMGNAME — IMG entry base name > 20 chars (IGNORED)
+### TXD-24 — IMG entry base name > 20 chars (IGNORED)
 `CStreaming::LoadCdDirectory` 0x5B6222 `cmp edx,0x14; jg skip`: an entry whose `strchr('.')` offset
 exceeds 20 is silently skipped → the slot is never registered → models referencing it never load
 (no crash). Entry name field is 24 bytes total (20 + `.txd`).
 
-### TXD-PARENT-LOOP — `txdp` cycle or self-parent (LOAD-FAIL forever)
+### TXD-26 — `txdp` cycle or self-parent (LOAD-FAIL forever)
 `ConvertBufferToObject` 0x40C6B0 refuses to load a child while `GetTxd(parent) == NULL` (re-request);
 a cycle (or `txdp a,a`) means neither ever loads. `TxdStoreFindCB` 0x731720 would spin forever on a
 cyclic chain only if such a chain existed in memory, which the streamer prevents. A parent that is
@@ -424,7 +424,7 @@ the dependent DFFs stay in "requested" state forever (invisible objects, no cras
 Overwritten from the format table in `rwD3D9SetRasterFormat` before anything reads it. Any value
 accepted.
 
-### TXD-MASK — mask name (IGNORED on D3D9)
+### TXD-13 — mask name (IGNORED on D3D9)
 Stored only; the native reader never opens mask files. Length ≥ 32 → truncated + RwErrorSet.
 
 ### TXD-DEVICEID — dictionary deviceId (IGNORED)
@@ -472,7 +472,7 @@ Game reader never looks at it (only the unused stock reader compares it with
      dictionary is not yet available inside the hook, so compare names collected so far).
    * If OK: open `RwStreamOpen(rwSTREAMMEMORY=3, READ=1, &{buf,length})` and call the original
      0x4CD820 on it (it consumes exactly what it needs; the outer stream is already past the chunk,
-     which also neutralises TXD-STRUCT-TRAILING). If not OK: log and return 0 (the dictionary is
+     which also neutralises TXD-18). If not OK: log and return 0 (the dictionary is
      dropped exactly as the engine would for a corrupt file) or hand back a 4×4 placeholder texture
      (`RwRasterCreate(4,4,32,0x504)` + `RwTextureCreate` + `RwTextureSetName`) to keep the TXD usable.
    * After the original returns, `(*pTexture)->raster` is complete: read back `ext->alpha`,
@@ -480,7 +480,7 @@ Game reader never looks at it (only the unused stock reader compares it with
      level, rwRASTERLOCKREAD=2)` gives `pBits/stride` if pixel checks are wanted (managed pool, safe).
 2. **Per TXD** — hook `CTxdStore::LoadTxd` 0x731DD0 / `StartLoadTxd` 0x731930 / `FinishLoadTxd`
    0x731E40 (all cdecl `(int slot, RwStream*)`; callers 0x40C6B0, 0x7320F0). At entry: peek the
-   0x16 + STRUCT headers at `memBlock+position` and refuse when STRUCT `len != 4` (TXD-STRUCTLEN is
+   0x16 + STRUCT headers at `memBlock+position` and refuse when STRUCT `len != 4` (TXD-02 is
    the one fault that happens before any texture hook runs) or the versions are out of range. At
    exit: `ms_pTxdPool[slot].txd` (0xC8800C → `*pool + slot*0xC`) holds the dictionary →
    `RwTexDictionaryForAllTextures` 0x7F3730 to count, detect duplicates (`FindNamedTexture` returning a

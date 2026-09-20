@@ -1,0 +1,8 @@
+bin/
+build/
+*.obj
+*.ilk
+*.exp
+src/lang_keys.txt
+__pycache__/
+CLAUDE.md
