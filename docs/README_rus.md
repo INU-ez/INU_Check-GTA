@@ -14,7 +14,7 @@
   <img src="https://img.shields.io/badge/License-GPL--3.0-blue" alt="License">
 </p>
 
-**[🇬🇧 English version](../README.md)** · **[📖 Каталог правил](re/GTACHECK_RULES.md)**
+**[🇬🇧 English version](../README.md)** · **[📘 Руководство](MANUAL_rus.md)** · **[📖 Каталог правил](re/GTACHECK_RULES.md)**
 
 </div>
 
@@ -122,6 +122,8 @@ gta_check.exe --cli <папка игры> [ключи]
   --undo                                    откатить последнее исправление из журнала
   --district N [--district-min M]           разделить карту на N×N районов (IPL/IDE/COL/LOD-TXD)
       [--district-what ipl,ide,col,txd,one] [--district-log f]
+  --windows-to-lod <модель> [--dry-run]     перенести светящиеся окна модели (яркие ночные цвета) на её LOD
+      [--w2l-opt brightness=170,grow=1,growmin=2,growdot=0.999,island=0.999,rotate=1,gain=0.5,skip=1,skipdist=0.5,flatten=1,snap=1,offset=0.1,maxsnap=5]
   --baseline-dump f                         дамп для базиса ванили (make_baseline.py)
   --lang-missing f                          непереведённые строки (для разработки)
 
@@ -199,6 +201,7 @@ src/              исходники (C++17)
   txd_edit.cpp      собственный кодек TXD (разбор, декод, ремонт, DXT-энкодер, запись бит-в-бит)
   fix.cpp           исправления DFF/TXD/IDE, запись с бэкапом, папка вывода, журнал отката
   district.cpp      деление карты по районам
+  win2lod.cpp       окна → LOD: перенос светящихся окон на LOD-модель
   rule_help.cpp     пояснения к кодам правил простым языком
   lang.cpp/.tsv     переводы RU/EN/ES (make_lang.py sync|merge|build)
   vanilla_*.h       базисы чистых SA / III / VC (make_baseline.py)

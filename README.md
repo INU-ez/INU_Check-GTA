@@ -14,7 +14,7 @@
   <img src="https://img.shields.io/badge/License-GPL--3.0-blue" alt="License">
 </p>
 
-**[🇷🇺 Русская версия](docs/README_rus.md)** · **[📖 Rule catalogue](docs/re/GTACHECK_RULES.md)**
+**[🇷🇺 Русская версия](docs/README_rus.md)** · **[📘 User manual](docs/MANUAL.md)** · **[📖 Rule catalogue](docs/re/GTACHECK_RULES.md)**
 
 </div>
 
@@ -122,6 +122,8 @@ gta_check.exe --cli <game folder> [options]
   --undo                                    revert the last fix from the journal
   --district N [--district-min M]           split the map into N×N districts (IPL/IDE/COL/LOD-TXD)
       [--district-what ipl,ide,col,txd,one] [--district-log f]
+  --windows-to-lod <model> [--dry-run]      graft the model's glowing windows (bright night colours) onto its LOD
+      [--w2l-opt brightness=170,grow=1,growmin=2,growdot=0.999,island=0.999,rotate=1,gain=0.5,skip=1,skipdist=0.5,flatten=1,snap=1,offset=0.1,maxsnap=5]
   --baseline-dump f                         dump for the vanilla baseline (make_baseline.py)
   --lang-missing f                          untranslated strings (development)
 
@@ -198,6 +200,7 @@ src/              sources (C++17)
   txd_edit.cpp      own TXD codec (parse, decode, repair, DXT encoder, bit-exact write)
   fix.cpp           DFF/TXD/IDE fixes, writes with backup, output folder, undo journal
   district.cpp      map splitting into districts
+  win2lod.cpp       windows → LOD: glowing windows grafted onto the LOD model
   rule_help.cpp     plain-language explanations for rule codes
   lang.cpp/.tsv     RU/EN/ES translations (make_lang.py sync|merge|build)
   vanilla_*.h       baselines of clean SA / III / VC (make_baseline.py)
