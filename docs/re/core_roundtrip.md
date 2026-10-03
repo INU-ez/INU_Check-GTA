@@ -1,3 +1,5 @@
+> Исторический отчёт об INU Tools и его писателях, сохранённый как материал реверса. Это не описание текущего интерфейса, CLI или писателей INU Check; результаты исходного round-trip здесь не пересчитывались.
+
 # INU_Tools core writers — round-trip check against vanilla GTA SA assets
 
 Date: 2026-09-11. Everything here was done WITHOUT Blender, using the pure-Python

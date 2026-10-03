@@ -192,24 +192,33 @@ static std::string translateInner(const std::string &ru, int depth)
 		return *t ? std::string(t) : ru;
 	}
 	unsigned char first = (unsigned char)ru[0];
-	std::vector<std::string> caps;
+	// the candidates of both buckets (the first literal's byte, then the patterns that start with a spec) are sorted by
+	// the length of their literal part, so the first match of a bucket is its best; the better of the two buckets wins —
+	// otherwise a short generic pattern such as «геометрия %d: %s» would swallow a whole specific message
+	std::vector<std::string> caps, bestCaps; const Pattern *best = nullptr;
 	for(int pass = 0; pass < 2; pass++){
 		const std::vector<int> &cand = gPatByFirst[pass == 0 ? first : 0];
+		if(pass == 1 && first == 0) break;
 		for(size_t k = 0; k < cand.size(); k++){
 			const Pattern &p = gPatterns[(size_t)cand[k]];
+			if(best && p.litChars <= best->litChars) break;
 			caps.clear();
 			if(!matchSegs(p.segs, 0, ru.c_str(), caps)) continue;
-			const char *t = col == 1 ? p.en : p.es;
-			if(!*t) return ru;
-			return render(p.segsTr[col - 1], caps, depth);
+			best = &p; bestCaps = caps;
+			break;
 		}
 	}
+	if(best){
+		const char *t = col == 1 ? best->en : best->es;
+		if(!*t) return ru;
+		return render(best->segsTr[col - 1], bestCaps, depth);
+	}
 	// nested fragment assembled from several messages ("a, b" / "a; b" / "a / b"): translate the pieces
-	if(depth > 0){
+	if(depth > 0 && depth < 12){
 		static const char *SEPS[] = { ", ", "; ", " / ", nullptr };
 		for(int k = 0; SEPS[k]; k++){
 			size_t at = ru.find(SEPS[k]);
-			if(at == std::string::npos) continue;
+			if(at == std::string::npos || at == 0) continue;	// at 0 the «right part with its separator» below would be the whole string again — endless recursion
 			std::string left = ru.substr(0, at);
 			std::string tl = translateInner(left, depth + 1);
 			if(hasCyrillic(tl) && hasCyrillic(left)) continue;

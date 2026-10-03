@@ -12,7 +12,7 @@
 // shared code is the librw skeleton + ImGui used by the window.
 #ifndef GTACHECK_H
 #define GTACHECK_H
-#define GC_VERSION "1.0"	// program version: window title, top bar, Help, reports, crash log, CLI (also src/gtacheck.rc and the README badges)
+#define GC_VERSION "2.0"	// program version: window title, top bar, Help, reports, crash log, CLI (also src/gtacheck.rc and the README badges)
 
 #include <stdint.h>
 #include <stddef.h>
@@ -149,6 +149,7 @@ struct Options {
 	bool limitAdjuster;		// pool/array limits raised (fastman92) → limit rules become notes
 	bool checkDff, checkTxd, checkCol, checkIfp, checkData;
 	bool partial = false;	// a partial re-check: the cross-reference / quality passes are skipped (their rows are kept from the previous run)
+	bool quiet = false;	// load the game data without reporting anything (the run behind a cached result)
 	bool texXref;			// DFF material textures vs TXD chain (needs the TXD pass)
 	bool reportInfo;		// keep SEV_INFO issues
 	bool skipVanillaImgs;		// only check IMGs / files that are not the stock gta3.img/gta_int.img/... (mod-only sweep)
@@ -583,6 +584,7 @@ bool TxdRebuildTexture(TxdTex &t, int w, int h, int fmt, int mips, std::string &
 bool TxdHasAlphaFormat(const TxdTex &t);	// alpha by the pixel format (DXT2..5, 8888, 1555, 4444) or the alpha flag
 bool WriteBytes(const std::string &path, const std::vector<uint8_t> &data);	// plain write (UTF-8 path), no backup, no journal
 bool EnsureDir(const std::string &p);
+std::string InuDir(const std::string &root);	// <root>\inu_check: every file the program writes
 // Output folder for every write (TXD resave, DFF frame fixes, text editor): "" = in place with a
 // backup under gta_check_backup; otherwise nothing in the game is touched and files land under this
 // folder (IMG entries flat by name, loose files by their relative path — a modloader-ready tree).
@@ -593,6 +595,183 @@ std::string OutputPathFor(const std::string &logicalOrName);	// <outdir>\<relati
 // Plain-language help for a rule code (rule_help.cpp): what it is, what it does to the game, what to do.
 bool RuleHelp(const std::string &code, std::string &what, std::string &risk, std::string &fix);
 int RuleHelpCount();
+// ------------------------------------------------------- DFF geometry on raw bytes (win2lod.cpp) ---
+// one GEOMETRY chunk unpacked: positions / normals / UVs / day + night colours / triangles / materials as they
+// are in the file; the frames are ignored (the game gives objs a unit frame). Shared by окна → LOD and the prelit bake.
+struct V3 { float x, y, z; };
+struct GMat { std::vector<uint8_t> raw; std::string tex, mask; uint32_t color; bool textured; GMat() : color(0xFFFFFFFF), textured(false) {} };
+struct GTri { uint32_t v[3], mat; };
+struct GGeom {
+	uint32_t flags, libid; int numTexSets;
+	bool prelit, normals, night, native;
+	bool hasSurf; float surf[3];
+	std::vector<V3> pos, nrm;
+	std::vector<std::vector<float> > uv;	// per set: u,v × numVerts
+	std::vector<uint32_t> day, nightCol;	// RGBA packed little-endian (R first in memory)
+	std::vector<GTri> tri;
+	std::vector<GMat> mats;
+	std::vector<std::vector<uint8_t> > extKeep;	// extension chunks copied verbatim (with header)
+	std::vector<std::string> extDropped;	// per-vertex plugins that cannot follow a changed vertex count
+	int binFlags;	// -1: no BinMesh
+	float sphere[4];
+	size_t hdrAt, endAt;	// the GEOMETRY chunk in the file: header offset, body end
+	GGeom() : flags(0), libid(0x1803FFFF), numTexSets(0), prelit(false), normals(false), night(false), native(false), hasSurf(false), binFlags(-1), hdrAt(0), endAt(0) { surf[0] = surf[1] = surf[2] = 1; sphere[0] = sphere[1] = sphere[2] = sphere[3] = 0; }
+	int numVerts() const { return (int)pos.size(); }
+};
+struct GDff { std::vector<GGeom> geoms; size_t clumpHdr, listHdr; uint32_t version; GDff() : clumpHdr(0), listHdr(0), version(0) {} };
+bool ParseDffGeoms(const std::vector<uint8_t> &data, GDff &d, std::string &err);
+void WriteDffGeometry(const GGeom &g, uint32_t version, std::vector<uint8_t> &out);	// one GEOMETRY chunk from the parsed data (BinMesh rebuilt as a trilist, night colours, the kept plugins)
+
+// ---------------------------------------------------------------- запекание prelit (prelit_bake.cpp) ---
+// day + night vertex colours of one placed model from its surroundings: sky visibility (cosine-weighted rays against
+// its own geometry and the neighbours), one shadow ray to the sun, the night from the sky and the 2dfx lamps in range.
+// Everything is raw bytes and plain floats — the CLI and the window share it. docs/PRELIT_PLAN.md.
+// a light placed in the world: colour 0..1, range (0 = corona only, skipped). 2dfx lamps come with strength 1, night only,
+// shadowed, additive; the artificial rig lights (BakeRig) carry the user's strength / time of day / shadow / mode
+struct BakeLight { V3 pos; float rgb[3]; float range; float strength; int when; bool shadow; int mode; bool rig; V3 local, aim;
+	int falloff; float offset;		// -1 = the bake's own curve; 0 linear, 1 square, 2 soft, 3 inverse (1/d, as Itera); offset: metres added under the curve, so the light does not blow out next to the lamp
+	int spot; V3 dir; float spotCos, spotBlend;	// spot: a cone about `dir`, full inside spotCos, fading to zero over spotBlend
+	bool twoSided;			// light the faces turned away as well (Itera keeps those in vertex_lights_back)	// when: 0 day, 1 night, 2 both; mode: 0 add light, 1 tint (multiply the lit colour towards rgb); local / aim: model-space position and the facade point it faces (the rig, for drawing)
+	BakeLight() : range(0), strength(1), when(1), shadow(true), mode(0), rig(false), falloff(-1), offset(0), spot(0), spotCos(0.7f), spotBlend(0.15f), twoSided(false) {
+		pos.x = pos.y = pos.z = 0; rgb[0] = rgb[1] = rgb[2] = 1; local = aim = pos; dir.x = dir.y = 0; dir.z = -1; } };
+struct BakeScene {
+	std::vector<V3> tri;			// occluders, world space, 3 vertices per triangle
+	std::vector<BakeLight> lights;
+	int models;				// neighbours added
+	BakeScene() : models(0) {}
+	// a DFF's triangles (and its 2dfx lights) placed by `mat` (row-major 4×4, nullptr = as they are)
+	bool addDff(const std::vector<uint8_t> &dff, const float *mat, bool withLights, std::string *err = nullptr);
+};
+struct BakeSun { float dir[3], rgb[3], weight; };	// one of several suns (hours) averaged by weight
+struct BakeOptions {
+	int rays;				// hemisphere samples per vertex (64 / 256 / 1024)
+	float radius, radiusFar;		// neighbours within this distance are gathered (by the caller); big models (radius ≥ 40) and LODs within radiusFar
+	bool sun; float sunDir[3]; float sunRgb[3];	// a shadow ray towards the sun (direction to it, unit), its tint 0..1
+	std::vector<BakeSun> suns;		// several suns (hours) instead of sunDir/sunRgb when not empty
+	int sunRays; float sunAngle;		// soft sun: rays in a cone of this half-angle (degrees); 1 = a crisp shadow
+	float skyTop[3], skyBot[3];		// day sky tint at the zenith / the horizon (max channel = 1)
+	float skyGradient;			// 0..1: how much the zenith ↔ horizon tint follows the ray's elevation
+	float shadeFloor, skyLevel, sunLevel;	// day = floor + skyLevel × visible sky + sunLevel × cos × visibility  (fractions of 255 before `scale`)
+	float bounce; float bounceRgb[3];	// one bounce: blocked rays return light of the hit surface (× skyLevel); rays going down carry the ground's colour
+	bool sunSelf, sunNeighbours, skySelf, skyNeighbours;	// which triangles block the sun / the sky
+	bool night; float nightSky[3]; float nightFloor, nightLevel, lampLevel;	// night = floor + nightLevel × visible sky + lampLevel × Σ lamp colour × falloff × cos × visibility
+	bool lampSurface;			// the lamp's falloff is measured to the nearest point of the surface, not to the vertex — a coarse road tile lit from its middle stays black otherwise
+	bool lampsAdd;				// BakeQuick only: the colours already in the file are the base and the lamps are added on top of them (no ambient, no sun recomputed)
+	float lampRangeMul, lampDefaultRange; int falloff;	// 2dfx lamps: range × this; corona-only lamps (range 0) reach this far (0 = skipped); falloff 0 linear, 1 quadratic, 2 soft
+	float moon;				// the night's directional light from high up (a moon), in the night sky's tint
+	float hardAngle; bool twoSided;		// hard edges: faces farther apart than this angle do not share a smoothed normal (0 = the file's normals); back faces block rays
+	float contrast, gamma; float tintDay[3], tintNight[3];	// the result curve (contrast about the vanilla mid-tone 0.2, gamma) and hand tints
+	// glowing windows: the materials whose texture is listed here emit at night — their vertices keep a bright colour
+	// and a lamp per cluster of window faces throws that light on the neighbouring polygons
+	std::vector<std::string> winTex;	// lower-case texture names counted as windows (empty = off)
+	bool windowsOnly = false;
+	int winRandom = 0, winSeed = 1; // 0 all, 1 random islands, 2 random horizontal rows
+	float winChance = 0.5f;
+	float winEmit; float winRgb[3]; float winLight, winRange;	// night colour of the window vertices (fraction of 255), its tint, the light on the walls and its reach
+	float keepOld, keepBright; int smoothIter;	// mix with the file's own colours (0..1); night vertices brighter than this (0..255) keep their colour (windows); smoothing passes over position neighbours
+	bool planarFit; float planarAngle, planarMinArea, planarSpacing;	// bad geometry: coplanar face regions (normals within the angle, area ≥ minArea) get one linear light function fitted to samples every `spacing` m — no interpolation spokes on coarse walls
+	float scale;				// the whole result × this (1 for SA — the pipeline doubles; ~1.8 for III/VC, whose ambient is added instead)
+	float bias;				// ray start offset along the normal, and hits closer than this are ignored (shared corners)
+	int threads;				// 0 = hardware concurrency
+	std::vector<BakeLight> lights;		// artificial lights (BakeRigLights), on top of the scene's 2dfx lamps
+	BakeOptions() : rays(256), radius(60.0f), radiusFar(60.0f), sun(true), sunRays(1), sunAngle(2.0f), skyGradient(1.0f), shadeFloor(0.07f), skyLevel(0.30f), sunLevel(0.32f), bounce(0.0f),
+	                sunSelf(true), sunNeighbours(true), skySelf(true), skyNeighbours(true), night(true), nightFloor(0.03f), nightLevel(0.12f), lampLevel(0.45f), lampSurface(true), lampsAdd(false), lampRangeMul(1.0f), lampDefaultRange(0.0f), falloff(0), moon(0.0f),
+	                hardAngle(0.0f), twoSided(true), winEmit(0.55f), winLight(0.5f), winRange(12.0f), contrast(1.0f), gamma(1.0f), keepOld(0.0f), keepBright(0.0f), smoothIter(0), planarFit(false), planarAngle(5.0f), planarMinArea(2.0f), planarSpacing(1.5f), scale(1.0f), bias(0.03f), threads(0) {
+		sunDir[0] = 0.55f; sunDir[1] = 0.32f; sunDir[2] = 0.77f; sunRgb[0] = 1.0f; sunRgb[1] = 0.97f; sunRgb[2] = 0.90f;
+		skyTop[0] = 0.92f; skyTop[1] = 0.96f; skyTop[2] = 1.0f; skyBot[0] = 1.0f; skyBot[1] = 0.98f; skyBot[2] = 0.96f;
+		nightSky[0] = 0.85f; nightSky[1] = 0.9f; nightSky[2] = 1.0f; bounceRgb[0] = 1.0f; bounceRgb[1] = 0.92f; bounceRgb[2] = 0.8f;
+		tintDay[0] = tintDay[1] = tintDay[2] = 1.0f; tintNight[0] = tintNight[1] = tintNight[2] = 1.0f;
+		winRgb[0] = 1.0f; winRgb[1] = 0.86f; winRgb[2] = 0.60f; }
+};
+// ------------------------------------------- зоны и сплайны запекания карты (bake_map.cpp) ---
+// A box marks the part of the map to bake; a spline is a line of light that exists only for the bake (street
+// lighting, a neon front) and is spread into lamps along the curve. Both are kept in gta_check_bake.txt next to
+// the game, so they are still there at the next start.
+struct BakeBox { std::string name; float centre[3], size[3], rot; bool on;	// rot: about Z, radians
+	BakeBox() : rot(0), on(true) { centre[0] = centre[1] = centre[2] = 0; size[0] = size[1] = 120.0f; size[2] = 80.0f; } };
+struct BakeNode { float p[3]; BakeNode() { p[0] = p[1] = p[2] = 0; } };
+struct BakeSpline {
+	std::string name; std::vector<BakeNode> pts;
+	float rgb[3], range, strength, step; int when, mode; bool shadow, on;	// when 0 day / 1 night / 2 both; mode 0 light / 1 tint; step: metres between lamps
+	BakeSpline() : range(20.0f), strength(0.6f), step(6.0f), when(1), mode(0), shadow(true), on(true) { rgb[0] = 1.0f; rgb[1] = 0.85f; rgb[2] = 0.6f; }
+};
+// A lamp placed by hand in the 3D view (the counterpart of Itera's «Light Point» object): it lives in the map
+// setup file, is dragged with the mouse and lights the models around it. A volume lamp (sphere / box) is spread
+// into a small grid of point lights so a whole room or a street front can be lit from one object.
+enum { LAMP_POINT, LAMP_SPHERE, LAMP_BOX, LAMP_SPOT };
+struct BakeLamp {
+	std::string name; int type; float pos[3], size[3];
+	float rgb[3], range, strength; int when, mode; bool shadow, on;	// when / mode / shadow as BakeLight
+	int falloff; float offset;			// the curve of this lamp: 0 linear, 1 square, 2 soft, 3 inverse (Itera); offset in metres
+	float dir[3], spotSize, spotBlend;		// a spot lamp: where it points (unit), the full angle in radians and how soft the edge is
+	bool twoSided;					// also light faces turned away from it
+	BakeLamp() : type(LAMP_POINT), range(12.0f), strength(0.8f), when(2), mode(0), shadow(true), on(true),
+	             falloff(0), offset(0.0f), spotSize(0.785f), spotBlend(0.15f), twoSided(false) {
+		pos[0] = pos[1] = pos[2] = 0; size[0] = size[1] = size[2] = 6.0f; rgb[0] = 1.0f; rgb[1] = 0.85f; rgb[2] = 0.6f;
+		dir[0] = dir[1] = 0.0f; dir[2] = -1.0f; }
+};
+void BakeLampLights(const BakeLamp &l, std::vector<BakeLight> &out);	// the lamp as the point lights the bake works with
+struct BakeSetup { std::vector<BakeBox> boxes; std::vector<BakeSpline> splines; std::vector<BakeLamp> lamps; std::string opt; };	// opt: the bake settings the map bake runs with (bakeOptString)
+bool BakeBoxContains(const BakeBox &b, const float *p);
+void BakeBoxCorners(const BakeBox &b, float out[8][3]);
+float BakeSplineLength(const BakeSpline &sp);
+void BakeSplinePoints(const BakeSpline &sp, int n, std::vector<V3> &out);
+void BakeSplineLights(const BakeSpline &sp, std::vector<BakeLight> &out);
+void BakeSetupLightsNear(const BakeSetup &s, const float *centre, float radius, std::vector<BakeLight> &out);
+std::string BakeSetupPath(const std::string &root);
+bool BakeSetupLoad(const std::string &root, BakeSetup &out, std::string &err);
+bool BakeSetupSave(const std::string &root, const BakeSetup &s, std::string &err);
+
+struct BakeGeom { std::vector<uint32_t> day, night; int verts; BakeGeom() : verts(0) {} };	// packed RGBA, as the file stores them
+struct BakeResult {
+	std::vector<BakeGeom> geoms;
+	std::vector<uint8_t> dffOut;		// the DFF with the colours written in place (prelit block + night chunk), everything else bit-exact
+	int verts, tris, sceneTris, lamps; bool hadPrelit, hadNight; int regions;	// planar regions fitted
+	int winFaces, winLamps;			// glowing windows: faces found, lamps they placed
+	float meanDay, minDay, maxDay, meanNight, minNight, maxNight;	// luminance of the stored colours (0..255)
+	int histDay[16], histNight[16];		// luminance histogram, 16 bins of 16
+	double ms; std::vector<std::string> log; std::string err;
+	BakeResult() : verts(0), tris(0), sceneTris(0), lamps(0), hadPrelit(false), hadNight(false), regions(0), winFaces(0), winLamps(0), meanDay(0), minDay(0), maxDay(0), meanNight(0), minNight(0), maxNight(0), ms(0) { memset(histDay, 0, sizeof(histDay)); memset(histNight, 0, sizeof(histNight)); }
+};
+// `mat`: the placement of the baked copy (row-major 4×4, nullptr = at the origin); the model's own triangles and lamps
+// join the scene inside. `cancel` / `progress` (0..1) are polled from the worker threads.
+bool BakePrelit(const std::vector<uint8_t> &dff, const float *mat, const BakeScene &scene, const BakeOptions &o, BakeResult &r, const volatile bool *cancel = nullptr, volatile float *progress = nullptr);
+void InstMatrixRaw(const Inst &in, bool sa, float *m);	// the placement matrix as the 3D map builds it (row-major 4×4)
+// The interactive pass: no rays at all — ambient by the normal's tilt plus lambert × falloff from every lamp in
+// range, a fraction of a millisecond per model, so a lamp can be dragged with the picture following it. The full
+// BakePrelit (sky visibility, shadows, bounce) stays behind the «Запечь» button.
+bool BakeQuick(const std::vector<uint8_t> &dff, const float *mat, const BakeOptions &o, BakeResult &res);
+bool BakeWriteColours(const std::vector<uint8_t> &dff, const std::vector<BakeGeom> &res, std::vector<uint8_t> &out, std::string &err);	// the colours into the DFF (what BakePrelit does at its end) — for averaged copies
+void BakeStats(BakeResult &r);		// mean / min / max / histograms from r.geoms
+// an artificial rig of lamps around the model, one per facade direction: the wall triangles (|n.z| < 0.6) are binned by the
+// azimuth of their normal into `sectors`, every sector with walls gets a lamp at the area-weighted centre of those walls moved
+// `dist` outward along their mean normal, at `height` above the model's base. A model without walls gets a ring around its box.
+struct BakeRig {
+	bool on; int sectors; float dist, height, range, strength; float rgb[3]; int when; bool shadow; int mode;	// when / mode as BakeLight
+	BakeRig() : on(false), sectors(8), dist(3.0f), height(4.0f), range(15.0f), strength(0.6f), when(1), shadow(true), mode(0) { rgb[0] = 1.0f; rgb[1] = 0.85f; rgb[2] = 0.6f; }
+};
+bool BakeRigLights(const std::vector<uint8_t> &dff, const float *mat, const BakeRig &rig, std::vector<BakeLight> &out, std::string &err);
+// ---------------------------------------------------------------- окна → LOD (win2lod.cpp) ---
+// the bright-at-night faces of a model (its glowing windows) grafted onto its LOD, snapped to the LOD's walls;
+// a port of windows_to_lod.py — docs/WINDOWS_TO_LOD.md. `delta`: row-major 4×4 = inv(M_lod)·M_main, or nullptr
+struct W2lOptions {
+	float minBrightness;	// a corner is a window when the night colour's luminance is ≥ this (0..255)
+	bool grow; int growMinMatch; float growDot;	// grow onto edge neighbours: same material, normals' dot ≥ growDot, ≥ growMinMatch bright corners
+	float islandDot;		// «one plane» when splitting a window into its glass and its reveal
+	bool fixRotation; float rotationGain;	// try the quarter turns about Z; accept when the mean distance drops to ≤ gain × the unturned one
+	bool skipExisting; float existingDist;	// a window already on the LOD (same material, bright) within this distance → skipped
+	bool flatten, snap; float wallOffset, maxSnap;	// project each flat window onto its plane; move it onto the LOD wall, `wallOffset` outward, walls farther than `maxSnap` are not used
+	W2lOptions() : minBrightness(170), grow(true), growMinMatch(2), growDot(0.999f), islandDot(0.999f), fixRotation(true), rotationGain(0.5f),
+	               skipExisting(true), existingDist(0.5f), flatten(true), snap(true), wallOffset(0.1f), maxSnap(5.0f) {}
+};
+struct W2lResult {
+	std::vector<uint8_t> lodOut; bool changed;
+	int windowFaces, islands, snapped, dup, noWall, tooFar, added, angle, addedVerts, addedTris, addedMats, lodTris;
+	std::vector<std::string> texNeeded;	// lower-case texture names of the window materials (its TXD must have them)
+	std::vector<std::string> log; std::string err;
+	W2lResult() : changed(false), windowFaces(0), islands(0), snapped(0), dup(0), noWall(0), tooFar(0), added(0), angle(0), addedVerts(0), addedTris(0), addedMats(0), lodTris(0) {}
+};
+bool WindowsToLod(const std::vector<uint8_t> &mainDff, const std::vector<uint8_t> &lodDff, const float *delta, const W2lOptions &o, W2lResult &r);
 bool RuleHelpAt(int i, std::string &code, std::string &what, std::string &risk, std::string &fix);
 bool SaveTextFile(const GameData &gd, const std::string &logical, const std::string &phys, const std::vector<uint8_t> &orig, const std::vector<uint8_t> &data, std::string &backup, std::string &err);
 // anim/cuts.img directory (own VER2 format, not in gta.dat) — used by the cutscene checks and the file viewer.

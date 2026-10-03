@@ -595,7 +595,7 @@ static void ruleTextureUse(Context &ctx)
 	std::set<std::string> anyModel, unknown;			// TXDs with at least one parsed model / with a model whose DFF was not parsed (usage unknown)
 	textureUsage(gd, used, anyModel, unknown);
 	if(const char *dbgTxd = getenv("GTACHECK_TEXUSE")){	// GTACHECK_TEXUSE=<txd>: every model of the TXD with its material textures (debugging QLT-12)
-		FILE *f = fopen("gta_check_texuse.txt", "wb");
+		FILE *f = fopen("inu_check_texuse.txt", "wb");
 		if(f){
 			for(size_t i = 0; i < gd.objs.size(); i++){
 				const ObjDef &o = gd.objs[i];

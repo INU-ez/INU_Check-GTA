@@ -1,3 +1,5 @@
+> Исторический отчёт об INU Tools и его писателях, сохранённый как материал реверса. Это не описание текущего интерфейса, CLI или писателей INU Check; результаты исходного round-trip здесь не пересчитывались.
+
 | asset | orig bytes | A bytes | A exact | B bytes | B exact | first differing byte | first differing leaf chunk | B leaf diffs besides FRAME_NAME | re-read structural diff |
 |---|---|---|---|---|---|---|---|---|---|
 | army.dff | 73925 | 73995 | no | 73995 | no | 4 (CLUMP header size field, grows with name padding) | FRAME_LIST[0]/EXTENSION[1]/FRAME_NAME[0] | BIN_MESH_PLG, BREAKABLE, MATFX_PLG, SKIN_PLG, STRUCT | none |

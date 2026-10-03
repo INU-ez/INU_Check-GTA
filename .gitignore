@@ -6,3 +6,5 @@ build/
 src/lang_keys.txt
 __pycache__/
 CLAUDE.md
+docs/PRELIT_PLAN.md
+docs/WINDOWS_TO_LOD.md

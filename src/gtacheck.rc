@@ -6,8 +6,8 @@
 1 ICON "gtacheck.ico"
 
 1 VERSIONINFO
-FILEVERSION 1,0,0,0
-PRODUCTVERSION 1,0,0,0
+FILEVERSION 2,0,0,0
+PRODUCTVERSION 2,0,0,0
 FILEOS VOS_NT_WINDOWS32
 FILETYPE VFT_APP
 BEGIN
@@ -17,9 +17,9 @@ BEGIN
 		BEGIN
 			VALUE "FileDescription", "INU Check — GTA folder checker"
 			VALUE "ProductName", "INU Check"
-			VALUE "FileVersion", "1.0.0.0"
-			VALUE "ProductVersion", "1.0.0.0"
-			VALUE "OriginalFilename", "gta_check.exe"
+			VALUE "FileVersion", "2.0.0.0"
+			VALUE "ProductVersion", "2.0.0.0"
+			VALUE "OriginalFilename", "inu_check.exe"
 			VALUE "InternalName", "gtacheck"
 		END
 	END

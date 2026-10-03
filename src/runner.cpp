@@ -145,6 +145,67 @@ void CheckCrossRefs(Context &ctx)
 			unused++;
 	}
 	if(unused) ctx.add(SEV_INFO, CAT_XREF, "TXD-28", "IMG", -1, "", fmt("%d TXD в архивах не используются ни одной IDE-моделью (занимают слоты пула 5000)", unused), "");
+
+	// DAT-22c: one LOD placement serving several objects. The engine allows it (m_numLodChildren counts them and the
+	// LOD only draws when none of its children does), and vanilla shares a LOD between copies of ONE model (the train
+	// tracks). Two DIFFERENT models behind one LOD means the LOD geometry can only stand in for one of them: whichever
+	// child streams in first hides the LOD, and the other object is left without its distant silhouette.
+	if(sa){
+		std::map<int, std::vector<size_t> > kids;	// global inst index of the LOD placement → the placements pointing at it
+		for(size_t i = 0; i < gd.insts.size(); i++){
+			const Inst &in = gd.insts[i];
+			if(in.lod < 0 || in.fileIdx < 0 || in.fileIdx >= (int)gd.ipls.size()) continue;
+			const IplFile &ipl = gd.ipls[(size_t)in.fileIdx];
+			const IplFile &list = ipl.textParent >= 0 ? gd.ipls[(size_t)ipl.textParent] : ipl;	// a streamed IPL numbers the lines of its text parent
+			if(in.lod >= list.numInst) continue;
+			size_t t = (size_t)(list.firstInst + in.lod);
+			if(t == i) continue;	// itself — DAT-22 already says so
+			kids[(int)t].push_back(i);
+		}
+		for(auto it = kids.begin(); it != kids.end(); ++it){
+			if(it->second.size() < 2) continue;
+			const Inst &lod = gd.insts[(size_t)it->first];
+			const ObjDef *lo = gd.findObj(lod.id);
+			std::string lodFile = lod.fileIdx >= 0 && lod.fileIdx < (int)gd.ipls.size() ? gd.ipls[(size_t)lod.fileIdx].logical : "IPL";
+			// vanilla shares one LOD between neighbouring buildings on purpose (mall_01 + mall_03 under LOD_sfs014roof):
+			// that is fine as long as the LOD's own bounding sphere reaches every child. A child standing outside it
+			// cannot be what this LOD draws — that is the wrong line number.
+			float lodR = lo && lo->dffRadius > 0 ? lo->dffRadius : 0.0f;
+			std::vector<int> ids; std::string who, far; int shown = 0, outside = 0;
+			for(size_t k = 0; k < it->second.size(); k++){
+				const Inst &ch = gd.insts[it->second[k]];
+				const ObjDef *co = gd.findObj(ch.id);
+				std::string cf = ch.fileIdx >= 0 && ch.fileIdx < (int)gd.ipls.size() ? basename(gd.ipls[(size_t)ch.fileIdx].logical) : "";
+				std::string cn = co ? co->name : fmt("%d", ch.id);
+				float dx = ch.pos[0] - lod.pos[0], dy = ch.pos[1] - lod.pos[1], dz = ch.pos[2] - lod.pos[2];
+				float d = sqrtf(dx * dx + dy * dy + dz * dz);
+				float reach = lodR + (co && co->dffRadius > 0 ? co->dffRadius : 0.0f) + 5.0f;
+				if(lodR > 0 && d > reach){ outside++; if(far.size() < 200){ if(!far.empty()) far += ", "; far += fmt("%s (%s:%d, %.0f ед.)", cn.c_str(), cf.c_str(), ch.line, d); } }
+				bool dup = false;
+				for(size_t j = 0; j < ids.size(); j++) if(ids[j] == ch.id) dup = true;
+				if(dup) continue;
+				ids.push_back(ch.id);
+				if(shown < 4){
+					if(!who.empty()) who += ", ";
+					who += fmt("%s (%s:%d)", cn.c_str(), cf.c_str(), ch.line);
+					shown++;
+				}
+			}
+			if(outside)
+				ctx.add(SEV_WARN, CAT_IPL, "DAT-22c", lodFile, lod.line, lo ? lo->name : "",
+				        fmt("этот LOD назначен %d объектам (моделей %d), но %d из них стоят дальше, чем достаёт его геометрия: %s — похоже, номер строки lod у них не тот",
+				            (int)it->second.size(), (int)ids.size(), outside, far.c_str()),
+				        "Индекс lod — номер inst-строки текстового IPL (с 0). Общий LOD у соседних зданий — нормально (так сделана ваниль), но объект должен попадать внутрь его габаритов.", lod.id);
+			else if(ids.size() >= 2)
+				ctx.add(SEV_INFO, CAT_IPL, "DAT-22c", lodFile, lod.line, lo ? lo->name : "",
+				        fmt("этот LOD общий для %d объектов разных моделей: %s%s — LOD появится, только когда ни один из них не нарисован",
+				            (int)it->second.size(), who.c_str(), ids.size() > 4 ? ", …" : ""), "", lod.id);
+			else
+				ctx.add(SEV_INFO, CAT_IPL, "DAT-22c", lodFile, lod.line, lo ? lo->name : "",
+				        fmt("этот LOD общий для %d копий модели %s — LOD появится, только когда ни одна копия не нарисована",
+				            (int)it->second.size(), who.c_str()), "", lod.id);
+		}
+	}
 }
 
 void RunCheck(Context &ctx)

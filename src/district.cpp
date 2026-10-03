@@ -180,7 +180,7 @@ bool DistrictApply(GameData &gd, const DistrictOptions &o, const DistrictPlan &p
 {
 	if(p.total == 0){ log += T("Нечего делить: ни одной подходящей копии (текстовые IPL без стрим-детей, вне интерьеров)\n"); return false; }
 	std::string mapsDir = joinPath(joinPath(joinPath(gd.root, "data"), "maps"), "district");
-	std::string imgDir = !OutputDir().empty() ? OutputDir() : dirExists(joinPath(gd.root, "modloader")) ? joinPath(joinPath(gd.root, "modloader"), "gta_check_fix") : joinPath(gd.root, "gta_check_out");
+	std::string imgDir = !OutputDir().empty() ? OutputDir() : dirExists(joinPath(gd.root, "modloader")) ? joinPath(joinPath(gd.root, "modloader"), "inu_check_fix") : joinPath(InuDir(gd.root), "out");
 	EnsureDir(mapsDir); EnsureDir(imgDir);
 	int newIpl = 0, newIde = 0, newCol = 0, newTxd = 0, movedInst = 0, movedObj = 0, movedCol = 0, movedTex = 0;
 	std::vector<std::string> datIpl, datIde;
@@ -236,7 +236,7 @@ bool DistrictApply(GameData &gd, const DistrictOptions &o, const DistrictPlan &p
 			if(c.insts.empty()) continue;
 			std::string name = cellName(c.gx, c.gy);
 			std::vector<std::string> out;
-			out.push_back(fmt("# gta_check district %s: cell %d,%d of a %dx%d grid (step %.0f)%s", name.c_str(), c.gx, c.gy, p.div, p.div, p.cell, c.parts.size() > 1 ? fmt(" + %d merged squares", (int)c.parts.size() - 1).c_str() : ""));
+			out.push_back(fmt("# inu_check district %s: cell %d,%d of a %dx%d grid (step %.0f)%s", name.c_str(), c.gx, c.gy, p.div, p.div, p.cell, c.parts.size() > 1 ? fmt(" + %d merged squares", (int)c.parts.size() - 1).c_str() : ""));
 			out.push_back("inst");
 			std::map<int, int> ordinalOf;	// GameData inst → line ordinal in the new file
 			std::vector<int> order = c.insts; std::sort(order.begin(), order.end());
@@ -297,7 +297,7 @@ bool DistrictApply(GameData &gd, const DistrictOptions &o, const DistrictPlan &p
 			}
 			if(!o.ide || bySection.empty()) continue;
 			std::vector<std::string> out;
-			out.push_back(fmt("# gta_check district %s", name.c_str()));
+			out.push_back(fmt("# inu_check district %s", name.c_str()));
 			for(auto &sec : bySection){ out.push_back(secName[sec.first]); for(size_t k = 0; k < sec.second.size(); k++) out.push_back(sec.second[k]); out.push_back("end"); }
 			TextDoc nd; nd.crlf = true; nd.trailing = true;
 			std::string logical = "data/maps/district/" + name + ".ide";
@@ -384,7 +384,7 @@ bool DistrictApply(GameData &gd, const DistrictOptions &o, const DistrictPlan &p
 		}
 	}
 	log += fmt(T("Итог: районов %d · IPL новых %d (копий перенесено %d) · IDE новых %d (моделей %d) · COL новых %d (записей %d) · TXD новых %d (текстур %d)\n"), (int)p.cells.size(), newIpl, movedInst, newIde, movedObj, newCol, movedCol, newTxd, movedTex);
-	if(newCol || newTxd) log += dirExists(joinPath(gd.root, "modloader")) || !OutputDir().empty() ? T("Новые .col / .txd лежат в папке modloader (или вывода) — игра берёт их как записи IMG.\n") : T("Новые .col / .txd лежат в gta_check_out — добавь их в gta3.img (или поставь modloader).\n");
+	if(newCol || newTxd) log += dirExists(joinPath(gd.root, "modloader")) || !OutputDir().empty() ? T("Новые .col / .txd лежат в папке modloader (или вывода) — игра берёт их как записи IMG.\n") : T("Новые .col / .txd лежат в inu_check\\out — добавь их в gta3.img (или поставь modloader).\n");
 	if(!p.skippedIpl.empty()){ log += T("Пропущены IPL, на которые ссылаются бинарные стрим-IPL (их lod-индексы нельзя сдвигать): "); for(size_t i = 0; i < p.skippedIpl.size(); i++){ if(i) log += ", "; log += p.skippedIpl[i]; } log += "\n"; }
 	return newIpl + newIde + newCol + newTxd > 0;
 }

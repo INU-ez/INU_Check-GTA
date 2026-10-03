@@ -2,14 +2,14 @@
 
 ![INU Check Logo](docs/logo.jpg)
 
-# INU_Check (GTA SA)
+# INU Check 2.0 — GTA SA / VC / III
 
-**🔎 Offline checker for a GTA SA/VC/III folder — finds what will crash the game before you launch it.**
+**🔎 Offline GTA SA/VC/III checker with a 3D world editor and PreLight tools — inspect problems and edit model lighting before launching the game.**
 
 <p>
   <img src="https://img.shields.io/badge/Platform-Windows%20x64-0078D6?logo=windows" alt="Windows">
   <img src="https://img.shields.io/badge/Game-GTA%20SA%20%C2%B7%20VC%20%C2%B7%20III-orange" alt="Games">
-  <img src="https://img.shields.io/badge/Version-1.0-green" alt="Version">
+  <img src="https://img.shields.io/badge/Version-2.0-green" alt="Version">
   <img src="https://img.shields.io/badge/Rules-~500%20codes-blue" alt="Rules">
   <img src="https://img.shields.io/badge/License-GPL--3.0-blue" alt="License">
 </p>
@@ -31,12 +31,12 @@
 - 🤫 **Zero noise on vanilla** — a clean SA 1.0 US gives 0 crashes; everything vanilla also has is hidden by default.
 - 💬 **Plain-language help** — "what it is / what it breaks / what to do" under every row, plus a reference of codes and shortcuts.
 - 🛠️ **Fixes it can apply** — DFF frame names, TXD re-save (D3D8→D3D9, palettes, mips, power of two, DXT without alpha, dead textures), draw distance and alpha flag in IDE, text edits; with backup, **undo**, or into a modloader-ready folder.
-- 👀 **Built-in viewers** — text editor on the offending line, 3D model preview with collision and polygon picking, TXD editor (PAL8/D3D8 too), 2D map with heat layers, 3D world view from IPLs with 14 colouring modes.
+- 👀 **Built-in viewers** — text editor on the offending line, 3D model preview with collision and polygon picking, TXD editor (PAL8/D3D8 too), 2D map with heat layers, 3D world view from IPLs with 16 viewing/color modes including normal and prelit.
 - 🧩 **Modloader-aware** — loose files, IDE/IPL by name, lines from mod readmes; fastman92 limit adjuster detected.
 - 📦 **Build quality** (`QLT`) — draw distance vs. radius, heavy TXDs, objects under water, overloaded sectors, duplicate placements, unused archive files, **TXD diet** in one click.
 - 🗺️ **Map splitting into districts** — a big mod is cut into IPL/IDE/COL/LOD-TXD by a grid with object limits.
-- 🖥️ **GUI + CLI** — the same check from a script with TXT / CSV / JSON / HTML reports and an exit code.
-- 🌍 **EN / RU / ES** interface, 9 colour schemes, UI scale.
+- 🖥️ **GUI + CLI** — the same check from a script with TXT / CSV / JSON / HTML reports and a crash-count exit code.
+- 🌍 **EN / RU / ES** interface, 11 colour schemes, UI scale.
 
 </td>
 <td width="50%" valign="top">
@@ -47,7 +47,18 @@
 </tr>
 </table>
 
-→ **[What's new](../../releases/latest)** · [Version history](../../releases)
+→ **[What's new](https://github.com/INU-ez/INU_Check-GTA/releases/latest)** · [Version history](https://github.com/INU-ez/INU_Check-GTA/releases)
+
+## ✨ What's new in 2.0
+
+- **World editor and glass interface** — the default 3D workspace with floating tools, console, and language controls on the sidebar.
+- **PreLight** — day/night prelit, zones, lamps, and light splines; G moves a selected point, Ctrl snaps it to another, and RMB cancels. Create points through the RMB menu.
+- **Window lighting** — texture selection, random windows/rows, light spreading onto surfaces of the same model, seam smoothing, and planar regions. Skipped windows and original prelit are preserved.
+
+- **Lighting bake** — sun, sky, neighbour occlusion, day/night colours, presets, and comparison with the original before writing to DFF.
+- **Windows → LOD** — transfer glowing window geometry and required textures to the distant model.
+- **Checks and diagnostics** — result caching, console, UI inspector (Ctrl+Shift+I), and additional collision viewing modes.
+- **Documentation and translations** — manuals checked against the code, current paths and write limitations documented, RU/EN/ES reviewed.
 
 ## 🔬 What is checked
 
@@ -73,42 +84,39 @@ Four severities: 💥 **Crash** (crash / hang / LOAD-FAIL) · ❌ **Error** (vis
 
 ## 🧰 What is in the window
 
-- **Issue table** — grouped by code, filters by severity / category / file / IMG / mod, search (Ctrl+F), sorting, "fixable / new / mod", ignore list (`gta_check_ignore.txt`).
+- **Issue table** — grouped by code, filters by severity / category / file / IMG / mod, search (Ctrl+F), sorting, "fixable / new / mod", ignore list (`inu_check\ignore.txt`).
 - **Row details** — severity, code (click → reference), "Open file | Copy | Open folder", "Fix: auto | manual…", rule explanation.
 - **Text editor** — IDE/IPL/DAT/CFG in place: line numbers with severity dots, F3 through problems, Ctrl+S with backup, right-click → show on map / in 3D / where used.
 - **Model preview** — DFF from IMG with textures and collision (spheres/boxes/faces), polygon picking by click, orbit/pan/zoom.
 - **TXD editor** — texture list with formats, preview, add / remove / drag, "Re-save…", "To folder…".
 - **Map** — radar tiles from IMG, issue markers, heat layers, "Screenshot" to PNG, district splitting with cell preview.
-- **3D world view** — the whole world from IPLs around the camera, LOD as in the game, click on a model = info card (id, IPL:line, DFF/TXD KB, COL, LOD, flags), layers **DFF | COL | LOD | TXD**, day/night, streaming load at the camera point, 14 colouring modes (problems, weight, draw distance, polygons, IPL, archive, vanilla/mod, LOD, collision, density, IPL flags, alpha, TXD in streaming, districts).
+- **3D world view** — the whole world from IPLs around the camera, LOD as in the game, click on a model = info card (id, IPL:line, DFF/TXD KB, COL, LOD, flags), layers **DFF | COL | LOD | TXD**, day/night, streaming load at the camera point, 16 viewing/color modes including normal and prelit (problems, weight, draw distance, polygons, IPL, archive, vanilla/mod, LOD, collision, density, IPL flags, alpha, TXD in streaming, districts).
 - **Unused** — archive files nothing references, with sizes and "Copy list".
 - **Where used** — search a model/texture name across all IDE/IPL/DAT/script.
 - **Folder watch** — a game file changed → offer to re-check; the re-check shows "fixed / new".
-- **Settings** — language, colour scheme (studio, game, calm, Blender, panel, neon CRT, graphite, indigo, ocean), font (10 embedded), scale 100/125/150 %, output folder, TXD diet, tooltips.
+- **Settings** — language, colour scheme (studio, game, calm, Blender, panel, neon CRT, graphite, indigo, ocean, arcade, Ariane), font (10 embedded), scale 100/125/150 %, output folder, TXD diet, tooltips.
 - **Reference** — "Rule codes" and "Keys & mouse" tabs.
 
 ## 📥 Installation
 
-Download `gta_check.exe` from the [latest release](../../releases/latest). No installer, no dependencies.
+Download `inu_check.exe` from the [latest release](https://github.com/INU-ez/INU_Check-GTA/releases/latest). No installer, no dependencies.
 
-**GUI:** drop `gta_check.exe` into the game root (next to `gta_sa.exe` / `data\gta.dat`) and run it — the check
-starts by itself. Or pass the folder: `gta_check.exe "D:\Grand Theft Auto San Andreas"`.
+**GUI:** drop `inu_check.exe` into the game root (next to `gta_sa.exe` / `data\gta.dat`) and run it — the check
+starts by itself. Or pass the folder: `inu_check.exe "D:\Grand Theft Auto San Andreas"`.
 
 **CLI:**
 
 ```
-gta_check.exe --cli "D:\Grand Theft Auto San Andreas" --txt report.txt --lang en
+inu_check.exe --cli "D:\Grand Theft Auto San Andreas" --txt report.txt --lang en
 ```
 
-> 🔒 The tool never touches game files without your action. It creates `gta_check.ini` next to the exe and, only
-> when asked, in the game folder: `gta_check_report.*` (export), `gta_check_backup\` (originals + undo journal
-> `undo.txt`), `gta_check_ignore.txt` (ignore list), `gta_check_out\` / `modloader\gta_check_fix\` (fixed files),
-> `gta_check_txd_diet\` (TXD diet), `gta_check_shot_N.png` (screenshots).
+> Settings and diagnostics live in `inu_check\` next to the executable; per-game data lives in `inu_check\` under the game root. Preferences, caches, and logs may be created automatically. Game resources change through write actions. `--out` redirects IMG entries, while loose files remain in place with backup. See manual section 3 for details.
 
 <details>
 <summary>⌨️ All command-line options</summary>
 
 ```
-gta_check.exe --cli <game folder> [options]
+inu_check.exe --cli <game folder> [options]
 
   --txt f | --csv f | --json f | --html f   write a report (HTML includes rule explanations)
   --lang ru|en|es                           message language
@@ -118,21 +126,28 @@ gta_check.exe --cli <game folder> [options]
   --limit-adjuster                          treat pool overflows as notes
   --mod-only                                skip the contents of vanilla IMGs
   --no-dff --no-txd --no-col --no-ifp --no-data   disable check families
-  --fix-all [--out <folder>]                apply automatic fixes (in place with backup, or into a folder)
+  --fix-all [--out <folder>]                apply automatic fixes (in place with backup, or IMG entries into a folder; loose files stay in place)
   --undo                                    revert the last fix from the journal
   --district N [--district-min M]           split the map into N×N districts (IPL/IDE/COL/LOD-TXD)
       [--district-what ipl,ide,col,txd,one] [--district-log f]
   --windows-to-lod <model> [--dry-run]      graft the model's glowing windows (bright night colours) onto its LOD
       [--w2l-opt brightness=170,grow=1,growmin=2,growdot=0.999,island=0.999,rotate=1,gain=0.5,skip=1,skipdist=0.5,flatten=1,snap=1,offset=0.1,maxsnap=5]
+  --bake-prelit <model|all>                  bake prelit; all = placed objs/tobj without day prelit
+      [--bake-rays N] [--bake-radius R] [--bake-preset <number|name>] [--dry-run]
+      [--bake-opt k=v,...] [--bake-filter lod|nolod|ipl=<name>|mod=<name>]
+      [--bake-rig sectors=8,dist=3,height=4,range=15,strength=0.6,rgb=ffd899,when=1,mode=0,shadow=1]
+  --bake-map [--bake-box x,y,z,sx,sy,sz[,rot]] [--bake-opt k=v,...] [--dry-run]
+                                             bake models in inu_check\bake.txt zones or the specified box
+
+Development
   --baseline-dump f                         dump for the vanilla baseline (make_baseline.py)
   --lang-missing f                          untranslated strings (development)
 
-gta_check.exe --fix-dff <in.dff> <out.dff>            fix frame names of a single file
-gta_check.exe --txd-fix <in.txd> <out.txd> [--ppm]    re-save a TXD (prints the format of every texture)
+inu_check.exe --fix-dff <in.dff> <out.dff>            fix frame names of a single file
+inu_check.exe --txd-fix <in.txd> <out.txd> [--ppm]    re-save a TXD (prints the format of every texture)
 ```
 
-Exit code: `0` — no crashes, `1` — crashes found (hidden vanilla ones excluded), `2` — bad arguments or
-unreadable file.
+Check exit code: `0` — no counted crashes; `1` — crashes found (hidden vanilla excluded). Some input errors return `2`. Later write/bake failures must be read in their logs; unknown options are currently ignored.
 
 </details>
 
@@ -143,7 +158,7 @@ unreadable file.
 | 🎮 **Game** | GTA San Andreas 1.0 US (calibrated); **Vice City and III — experimental** |
 | 🧩 **Mods** | modloader, fastman92 limit adjuster, MTA:SA folders |
 | 🖥️ **OS** | Windows x64 (Direct3D 9) |
-| 🔧 **Build** | Visual Studio 2022+, MSVC, C++17 — no other dependencies |
+| 🔧 **Build** | Visual Studio with the MSVC x64 toolchain, MSVC, C++17 — no other dependencies |
 
 <details>
 <summary>III / VC support — details (experimental)</summary>
@@ -168,7 +183,7 @@ these families are skipped for III/VC. False positives are possible; please repo
 <summary>🏗️ Building from source</summary>
 
 ```
-build.bat            → bin\win-amd64-d3d9\Release\gta_check.exe
+build.bat            → bin\win-amd64-d3d9\Release\inu_check.exe
 build.bat debug      → debug build (/Zi /Od)
 ```
 
@@ -226,7 +241,7 @@ build.bat         build script
 - Ped preview is static (skin / hanim not hooked up); parent TXDs (`txdp`) are not loaded in the preview.
 - The ignore list is not applied in CLI mode; the TXT export has no rule explanations (HTML has them).
 - District splitting for III/VC covers IPL and IDE only (COL and LOD-TXD are skipped); text IPLs are not converted to binary streamed IPLs.
-- If the tool crashes it writes `gta_check_crash.txt` with a stack trace next to itself — attach it to your issue.
+- If the tool crashes it writes `inu_check\crash.txt` with a stack trace next to itself — attach it to your issue.
 
 ## 🔗 Links
 

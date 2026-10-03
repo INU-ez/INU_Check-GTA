@@ -39,7 +39,8 @@ bool tryResetDevice(void);
 long lastResetResult(void);
 void requestReset(void);	// reset the swap chain at the next beginUpdate (gtacheck: after a window move the part that was off-screen stays black otherwise)
 void setSizeLock(bool on);	// gtacheck: while on, a client size different from the back buffer does NOT reset the device (Present stretches) — used during a border drag
-void setFogRange(bool on, float start, float end);	// gtacheck: linear fog from start to end instead of fogPlane..farPlane (the timecycle's FogSt..FarClp under a far clip that shows the whole map)
+void setFogRange(bool on, float start, float end);
+extern bool autoMipmapOnLoad;	// gtacheck: while set, a D3D9 native texture with a single level ≥ 8 px is created with D3DUSAGE_AUTOGENMIPMAP — the GPU builds the chain (the map viewer: no shimmering on textures the mod shipped without mips)	// gtacheck: linear fog from start to end instead of fogPlane..farPlane (the timecycle's FogSt..FarClp under a far clip that shows the whole map)
 #ifdef _D3D9_H_
 extern IDirect3DDevice9 *d3ddevice;
 void setD3dMaterial(D3DMATERIAL9 *mat9);

@@ -5,7 +5,7 @@
 // at most 23 characters; EXTENSION / FRAMELIST / CLUMP sizes are recomputed and
 // the rest of the file is copied verbatim.  The result goes back to where the
 // engine reads it (IMG entry or loose modloader file); the original bytes are
-// saved under <game>\gta_check_backup\ first.
+// saved under <game>\inu_check\backup\ first.
 #include "gtacheck.h"
 
 #include <algorithm>
@@ -262,10 +262,10 @@ static bool ensureDir(const std::string &p)
 #endif
 }
 
-// Saves the original bytes of an entry under <root>/gta_check_backup/<img or "loose">/<name>.
+// Saves the original bytes of an entry under <root>/inu_check/backup/<img or "loose">/<name>.
 static bool backupEntry(const GameData &gd, const Entry &e, const std::vector<uint8_t> &orig, std::string &backupPath)
 {
-	std::string dir = joinPath(gd.root, "gta_check_backup");
+	std::string dir = joinPath(InuDir(gd.root), "backup");
 	if(!ensureDir(dir)) return false;
 	std::string sub = e.img >= 0 ? stem(gd.archives[(size_t)e.img].logical) : "loose";
 	dir = joinPath(dir, sub);
@@ -372,16 +372,16 @@ std::string OutputPathFor(const std::string &logicalOrName)
 }
 
 // ---- undo journal ----
-// <root>\gta_check_backup\undo.txt: one line per write, tab-separated:
+// <root>\inu_check\backup\undo.txt: one line per write, tab-separated:
 //   img  <archive phys>  <entry name>  <sectors before>  <undo copy>  <label>
 //   file <phys>          <undo copy>   <label>
 //   new  <phys>          <label>                                (a file that did not exist before: undo deletes it)
-// The undo copies live in gta_check_backup\undo\ (one per write — unlike the first-original backups next to them).
-static std::string undoDir(const std::string &root) { return joinPath(joinPath(root, "gta_check_backup"), "undo"); }
-static std::string undoJournal(const std::string &root) { return joinPath(joinPath(root, "gta_check_backup"), "undo.txt"); }
+// The undo copies live in inu_check\backup\undo\ (one per write — unlike the first-original backups next to them).
+static std::string undoDir(const std::string &root) { return joinPath(joinPath(InuDir(root), "backup"), "undo"); }
+static std::string undoJournal(const std::string &root) { return joinPath(joinPath(InuDir(root), "backup"), "undo.txt"); }
 static bool undoCopy(const std::string &root, const std::string &name, const std::vector<uint8_t> &bytes, std::string &path)
 {
-	if(!ensureDir(joinPath(root, "gta_check_backup")) || !ensureDir(undoDir(root))) return false;
+	if(!ensureDir(joinPath(InuDir(root), "backup")) || !ensureDir(undoDir(root))) return false;
 	static unsigned seq = 0;
 	std::string base = name; for(size_t i = 0; i < base.size(); i++) if(base[i] == '/' || base[i] == '\\' || base[i] == ':') base[i] = '_';
 	path = joinPath(undoDir(root), fmt("%llu_%u_%s", (unsigned long long)time(nullptr), ++seq, base.c_str()));
@@ -494,10 +494,10 @@ bool SaveTextFile(const GameData &gd, const std::string &logical, const std::str
 		else if(undoCopy(gd.root, basename(backup), before, copy)) undoAppend(gd.root, "file\t" + backup + "\t" + copy + "\t" + logical);
 		return true;
 	}
-	std::string dir = joinPath(gd.root, "gta_check_backup");
-	if(!ensureDir(dir)){ err = T("не удалось создать gta_check_backup"); return false; }
+	std::string dir = joinPath(InuDir(gd.root), "backup");
+	if(!ensureDir(dir)){ err = T("не удалось создать inu_check\\backup"); return false; }
 	dir = joinPath(dir, "text");
-	if(!ensureDir(dir)){ err = T("не удалось создать gta_check_backup"); return false; }
+	if(!ensureDir(dir)){ err = T("не удалось создать inu_check\\backup"); return false; }
 	std::string name = normSlashes(logical);
 	for(size_t i = 0; i < name.size(); i++) if(name[i] == '/' || name[i] == ':') name[i] = '_';
 	backup = joinPath(dir, name);

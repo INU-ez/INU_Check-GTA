@@ -449,6 +449,8 @@ void Context::add(Severity sev, Category cat, const char *code, const std::strin
                   const std::string &object, const std::string &msg, const std::string &detail, int id,
                   int fix, int entry)
 {
+	if(opt.quiet) return;	// the data pass behind a cached result: its rows would double the cached ones
+
 	if(sev == SEV_INFO && !opt.reportInfo) return;
 	Issue is;
 	is.sev = sev;
@@ -867,7 +869,7 @@ bool ExportHtml(const Report &rep, const GameData &gd, const std::string &path, 
 	fprintf(f, "%s", htmlEscape(fmt(T("Проблем: %d (краш %d, ошибок %d, предупреждений %d, инфо %d)\n"),
 	        (int)order.size(), bySev[SEV_FATAL], bySev[SEV_ERROR], bySev[SEV_WARN], bySev[SEV_INFO])).c_str());
 	if(vTotal) fprintf(f, "%s", htmlEscape(fmt(T("Скрыто ванильных: %d (те же сообщения есть у чистой игры (SA 1.0 US / III / VC))\n"), vTotal)).c_str());
-	if(iTotal) fprintf(f, "%s", htmlEscape(fmt(T("Скрыто игнорируемых: %d (gta_check_ignore.txt)\n"), iTotal)).c_str());
+	if(iTotal) fprintf(f, "%s", htmlEscape(fmt(T("Скрыто игнорируемых: %d (inu_check\\ignore.txt)\n"), iTotal)).c_str());
 	fprintf(f, "</p>\n<table>\n<tr><th>%s</th><th>%s</th><th>%s</th><th>%s</th><th>%s</th><th>%s</th></tr>\n",
 	        htmlEscape(T("Уровень")).c_str(), htmlEscape(T("Код")).c_str(), htmlEscape(T("Категория")).c_str(),
 	        htmlEscape(T("Файл")).c_str(), htmlEscape(T("Объект")).c_str(), htmlEscape(T("Сообщение")).c_str());

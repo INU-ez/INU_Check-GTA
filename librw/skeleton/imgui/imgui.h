@@ -375,6 +375,33 @@ IM_MSVC_RUNTIME_CHECKS_RESTORE
 // (Note that ImGui:: being a namespace, you can add extra ImGui:: functions in your own separate file. Please don't modify imgui source files!)
 //-----------------------------------------------------------------------------
 
+// gtacheck: the UI inspector. With GcInspectCollect set, every item of the frame is handed to GcInspectAdd
+// (id, rectangle, window name, font size) so the inspector can name whatever is under the cursor - not only
+// the clickable things, which is all HoveredId knows about.
+typedef void (*GcInspectAddFn)(unsigned int id, const ImVec2& mn, const ImVec2& mx, const char* window, float font_size);
+extern IMGUI_API bool           GcInspectCollect;
+extern IMGUI_API GcInspectAddFn GcInspectAdd;
+
+// gtacheck: when set, popups and menus have their background painted by this callback instead of the plain
+// ImGuiCol_PopupBg rectangle (the app draws its frosted glass with concave corners there).
+// `name` and `flags` are the window's own; the app decides what (if anything) to paint. Returning false
+// means «not mine» and ImGui fills the usual rectangle.
+typedef bool (*GcPopupBgFn)(ImDrawList* draw_list, const ImVec2& mn, const ImVec2& mx, const char* name, ImGuiWindowFlags flags);
+extern IMGUI_API GcPopupBgFn    GcPopupBg;
+
+// gtacheck: popups and menus fade in over GcPopupFadeMs milliseconds (0 = off). While one is being drawn,
+// GcPopupAlpha holds its current 0..1 value, so the app can fade the background it paints itself.
+extern IMGUI_API float          GcPopupFadeMs;
+extern IMGUI_API float          GcPopupAlpha;
+// While a closed popup fades out its draw data is replayed a few frames later, so any texture it used must
+// still be alive. Anything that is not the font atlas is drawn with this texture instead (0 = skip it).
+extern IMGUI_API ImTextureID    GcFadeSafeTex;
+typedef void (*ImDrawCallback)(const ImDrawList* parent_list, const ImDrawCmd* cmd);   // (declared again below, identically)
+extern IMGUI_API ImDrawCallback GcFadeCbFrom;   // gtacheck: a callback whose data dies with the frame; a fading popup's replay
+extern IMGUI_API ImDrawCallback GcFadeCbTo;     // issues GcFadeCbTo instead, with GcFadeCbSize bytes copied by GcFadeCbCopy at the snapshot
+extern IMGUI_API void         (*GcFadeCbCopy)(const ImDrawCmd* cmd, void* out);
+extern IMGUI_API int            GcFadeCbSize;
+
 namespace ImGui
 {
     // Context creation and access

@@ -92,6 +92,7 @@ struct Globals
 };
 extern Globals globals;
 // gtacheck: frameless window (win.cpp) — the top strip of the client area is the caption
+extern bool sizeMoveActive;	// gtacheck: a window border is being dragged right now
 extern int customFrame, captionH, captionExclN; extern long captionExcl[8][4];	// exclusion rects l,t,r,b in client pixels
 extern uint32 requestedMultiSamplingLevels;
 

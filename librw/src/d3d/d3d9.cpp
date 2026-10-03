@@ -18,6 +18,7 @@
 #define PLUGIN_ID 2
 
 namespace rw {
+namespace d3d { bool autoMipmapOnLoad = false; }
 namespace d3d9 {
 using namespace d3d;
 
@@ -741,6 +742,8 @@ readNativeTexture(Stream *stream)
 	Raster *raster;
 	D3dRaster *ext;
 
+	// gtacheck: a single-level texture gets a GPU-generated chain when the viewer asks (autoMipmapOnLoad)
+	bool autogen = d3d::autoMipmapOnLoad && numLevels <= 1 && width >= 8 && height >= 8 && !(format & (Raster::PAL4 | Raster::PAL8));
 	if(flags & 8){
 		// is compressed
 		assert((flags & 2) == 0 && "Can't have cube maps yet");
@@ -749,17 +752,21 @@ readNativeTexture(Stream *stream)
 		ext = GETD3DRASTEREXT(raster);
 		ext->format = d3dformat;
 		ext->hasAlpha = flags & 1;
+		ext->autogenMipmap = autogen;
 		ext->texture = createTexture(raster->width, raster->height,
-		                             raster->format & Raster::MIPMAP ? numLevels : 1,
-		                             0,
+		                             autogen ? 0 : raster->format & Raster::MIPMAP ? numLevels : 1,
+		                             autogen ? D3DUSAGE_AUTOGENMIPMAP : 0,
 		                             ext->format);
+		if(autogen && ext->texture == nil)	// the driver has no autogen for this format: the plain single level
+			ext->texture = createTexture(raster->width, raster->height, 1, 0, ext->format);
 		assert(ext->texture);
 		raster->flags &= ~Raster::DONTALLOCATE;
 		ext->customFormat = 1;
+		if(autogen && ext->texture) raster->format |= Raster::MIPMAP;
 	}else if(flags & 2){
 		assert(0 && "Can't have cube maps yet");
 	}else{
-		raster = Raster::create(width, height, depth, format | type, PLATFORM_D3D9);
+		raster = Raster::create(width, height, depth, format | type | (autogen ? Raster::MIPMAP | Raster::AUTOMIPMAP : 0), PLATFORM_D3D9);
 		assert(raster);
 		ext = GETD3DRASTEREXT(raster);
 	}

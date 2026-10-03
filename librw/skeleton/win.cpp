@@ -70,7 +70,7 @@ static rw::Rect pendingRect;
 // the strip height (client pixels) plus rectangles inside the strip that stay ordinary client area
 // (its own buttons / fields); the resize borders are 8 px along the edges. Toggled with
 // SetWindowPos(SWP_FRAMECHANGED) so WM_NCCALCSIZE is asked again.
-namespace sk { int customFrame = 0, captionH = 0, captionExclN = 0; long captionExcl[8][4]; }
+namespace sk { int customFrame = 0, captionH = 0, captionExclN = 0; long captionExcl[8][4]; bool sizeMoveActive = false; }	// sizeMoveActive: a border drag is in progress — the application skips its expensive work
 
 static void KeyUp(int key) { EventHandler(KEYUP, &key); }
 static void KeyDown(int key) { EventHandler(KEYDOWN, &key); }
@@ -206,7 +206,7 @@ WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		// device Reset (all DEFAULT-pool textures rebuilt) per mouse move — flicker and lag with the 3D map
 		// open. The size is kept pending: applied at most every 400 ms by the timer (the back buffer is
 		// stretched to the client area meanwhile) and for sure when the drag ends.
-		if(inSizeMove){ pendingRect = r; sizePending = true; if(running){ float dt = 0.016f; EventHandler(IDLE, &dt); } break; }	// a stretched frame right away: the new strip of window is never left unpainted
+		if(inSizeMove){ pendingRect = r; sizePending = true; break; }	// the 16 ms timer already draws the frames: drawing here as well doubled the work of every drag step	// a stretched frame right away: the new strip of window is never left unpainted
 		EventHandler(RESIZE, &r);
 		break;
 
@@ -217,13 +217,13 @@ WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		if(running) return 1;	// gtacheck: nothing to erase — every frame covers the client area (the brush erase was the black flicker on resize)
 		break;
 	case WM_ENTERSIZEMOVE:
-		inSizeMove = true;
+		inSizeMove = true; sk::sizeMoveActive = true; sizeMoveActive = true;
 		rw::d3d::setSizeLock(true);	// the back buffer keeps its size during the drag, Present stretches it; the real resize comes from the timer / at the end
 		SetTimer(hwnd, 1, 16, nil);
 		break;
 	case WM_EXITSIZEMOVE:
 		KillTimer(hwnd, 1);
-		inSizeMove = false;
+		inSizeMove = false; sk::sizeMoveActive = false; sizeMoveActive = false;
 		rw::d3d::setSizeLock(false);
 		if(sizePending){ sizePending = false; EventHandler(RESIZE, &pendingRect); }
 		break;
@@ -233,7 +233,7 @@ WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 			QueryPerformanceCounter((LARGE_INTEGER*)&now); QueryPerformanceFrequency((LARGE_INTEGER*)&freq);
 			float dt = last ? (float)(now - last) / freq : 0.016f; if(dt > 0.1f) dt = 0.1f;
 			last = now;
-			if(sizePending && (double)(now - lastResize) / freq >= 0.4){ sizePending = false; lastResize = now; rw::d3d::setSizeLock(false); EventHandler(RESIZE, &pendingRect); rw::d3d::setSizeLock(true); return 0; }	// RESIZE draws a frame itself (with the Reset)
+			(void)lastResize;	// no device reset while the border is held: with a loaded map a Reset costs hundreds of ms
 			EventHandler(IDLE, &dt);
 			return 0;
 		}

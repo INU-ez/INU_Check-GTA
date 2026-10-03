@@ -1325,6 +1325,10 @@ static void             UpdateSettings();
 static int              UpdateWindowManualResize(ImGuiWindow* window, const ImVec2& size_auto_fit, int* border_hovered, int* border_held, int resize_grip_count, ImU32 resize_grip_col[4], const ImRect& visibility_rect);
 static void             RenderWindowOuterBorders(ImGuiWindow* window);
 static void             RenderWindowDecorations(ImGuiWindow* window, const ImRect& title_bar_rect, bool title_bar_is_highlight, bool handle_borders_and_resize_grips, int resize_grip_count, const ImU32 resize_grip_col[4], float resize_grip_draw_size);
+static void             GcFadeOutUpdate();	// gtacheck: replays closed popups while they fade out
+
+// gtacheck: does this window fade in? (popups and menus, never modals)
+static inline bool      GcWindowFades(ImGuiWindowFlags flags) { return GcPopupFadeMs > 0.0f && (flags & (ImGuiWindowFlags_Popup | ImGuiWindowFlags_ChildMenu)) && !(flags & ImGuiWindowFlags_Modal); }
 static void             RenderWindowTitleBarContents(ImGuiWindow* window, const ImRect& title_bar_rect, const char* name, bool* p_open);
 static void             RenderDimmedBackgroundBehindWindow(ImGuiWindow* window, ImU32 col);
 static void             RenderDimmedBackgrounds();
@@ -5800,6 +5804,7 @@ void ImGui::EndFrame()
         return;
     }
 
+    GcFadeOutUpdate();	// gtacheck: closed popups keep fading for a moment
     CallContextHooks(&g, ImGuiContextHookType_EndFramePre);
 
     // [EXPERIMENTAL] Recover from errors
@@ -7001,7 +7006,12 @@ void ImGui::RenderWindowDecorations(ImGuiWindow* window, const ImRect& title_bar
             }
             if (override_alpha)
                 bg_col = (bg_col & ~IM_COL32_A_MASK) | (IM_F32_TO_INT8_SAT(alpha) << IM_COL32_A_SHIFT);
-            window->DrawList->AddRectFilled(window->Pos + ImVec2(0, window->TitleBarHeight), window->Pos + window->Size, bg_col, window_rounding, (flags & ImGuiWindowFlags_NoTitleBar) ? 0 : ImDrawFlags_RoundCornersBottom);
+            // gtacheck: our own glass behind menus, popups and the tool windows
+            bool gc_painted = false;
+            if (GcPopupBg)
+                gc_painted = GcPopupBg(window->DrawList, window->Pos + ImVec2(0, window->TitleBarHeight), window->Pos + window->Size, window->Name, flags);
+            if (!gc_painted)
+                window->DrawList->AddRectFilled(window->Pos + ImVec2(0, window->TitleBarHeight), window->Pos + window->Size, bg_col, window_rounding, (flags & ImGuiWindowFlags_NoTitleBar) ? 0 : ImDrawFlags_RoundCornersBottom);
         }
 
         // Title bar
@@ -7764,6 +7774,19 @@ bool ImGui::Begin(const char* name, bool* p_open, ImGuiWindowFlags flags)
             if (render_decorations_in_parent)
                 window->DrawList = parent_window->DrawList;
 
+            // gtacheck: the fade of a popup / menu — applied before its decorations are drawn
+            if (GcWindowFades(flags))
+            {
+                const ImGuiID key = ImHashStr("##gcfade");
+                float t0 = window->StateStorage.GetFloat(key, -1.0f);
+                if (window->Appearing || t0 < 0.0f) { t0 = (float)g.Time; window->StateStorage.SetFloat(key, t0); }
+                float t = ImSaturate(((float)g.Time - t0) * 1000.0f / GcPopupFadeMs);
+                t = t * t * (3.0f - 2.0f * t);                       // smoothstep
+                window->StateStorage.SetFloat(key + 1, g.Style.Alpha); // restored in End()
+                GcPopupAlpha = t;
+                g.Style.Alpha *= t;
+            }
+
             // Handle title bar, scrollbar, resize grips and resize borders
             const ImGuiWindow* window_to_highlight = g.NavWindowingTarget ? g.NavWindowingTarget : g.NavWindow;
             const bool title_bar_is_highlight = want_focus || (window_to_highlight && window->RootWindowForTitleBarHighlight == window_to_highlight->RootWindowForTitleBarHighlight);
@@ -8019,6 +8042,14 @@ void ImGui::End()
     {
         IM_ASSERT(window->DrawList == NULL);
         window->DrawList = &window->DrawListInst;
+    }
+
+    // gtacheck: undo the popup fade applied in Begin()
+    if (GcWindowFades(window->Flags))
+    {
+        float saved = window->StateStorage.GetFloat(ImHashStr("##gcfade") + 1, -1.0f);
+        if (saved >= 0.0f) g.Style.Alpha = saved;
+        GcPopupAlpha = 1.0f;
     }
 
     // Stop logging
@@ -11005,6 +11036,116 @@ void ImGui::KeepAliveID(ImGuiID id)
 // declare their minimum size requirement to ItemSize() and provide a larger region to ItemAdd() which is used drawing/interaction.
 // THIS IS IN THE PERFORMANCE CRITICAL PATH (UNTIL THE CLIPPING TEST AND EARLY-RETURN)
 IM_MSVC_RUNTIME_CHECKS_OFF
+bool           GcInspectCollect = false;	// gtacheck: the UI inspector records the whole frame while this is set
+GcInspectAddFn GcInspectAdd = NULL;
+GcPopupBgFn    GcPopupBg = NULL;	// gtacheck: the app paints popup / menu backgrounds (frosted glass)
+
+// gtacheck: a popup that has just closed keeps being drawn for a moment, from a copy of its draw data
+struct GcFadeSlot { ImGuiID Id; float T0; ImVector<ImDrawVert> Vtx; ImVector<ImDrawIdx> Idx; ImVector<ImDrawCmd> Cmd; ImVector<char> Cb; ImVector<int> CbOff; };
+static GcFadeSlot GcFadeSlots[4];
+
+namespace ImGui {	// the forward declaration lives in this namespace, with the other internals
+static void GcFadeOutUpdate()
+{
+    ImGuiContext& g = *GImGui;
+    if (GcPopupFadeMs <= 0.0f)
+        return;
+    const float now = (float)g.Time;
+    for (int i = 0; i < g.Windows.Size; i++)   // remember what every live popup looks like
+    {
+        ImGuiWindow* w = g.Windows[i];
+        if (w->LastFrameActive != g.FrameCount || w->Hidden || !GcWindowFades(w->Flags))
+            continue;
+        ImDrawList* dl = w->DrawList;
+        if (dl == NULL || dl->CmdBuffer.Size == 0 || dl->VtxBuffer.Size == 0)
+            continue;
+        GcFadeSlot* slot = NULL;
+        for (int k = 0; k < IM_ARRAYSIZE(GcFadeSlots) && slot == NULL; k++) if (GcFadeSlots[k].Id == w->ID) slot = &GcFadeSlots[k];
+        for (int k = 0; k < IM_ARRAYSIZE(GcFadeSlots) && slot == NULL; k++) if (GcFadeSlots[k].Id == 0) slot = &GcFadeSlots[k];
+        if (slot == NULL)
+            continue;
+        slot->Id = w->ID;
+        slot->T0 = 0.0f;
+        slot->Vtx.resize(dl->VtxBuffer.Size); memcpy(slot->Vtx.Data, dl->VtxBuffer.Data, (size_t)dl->VtxBuffer.Size * sizeof(ImDrawVert));
+        slot->Idx.resize(dl->IdxBuffer.Size); memcpy(slot->Idx.Data, dl->IdxBuffer.Data, (size_t)dl->IdxBuffer.Size * sizeof(ImDrawIdx));
+        slot->Cmd.resize(dl->CmdBuffer.Size); memcpy(slot->Cmd.Data, dl->CmdBuffer.Data, (size_t)dl->CmdBuffer.Size * sizeof(ImDrawCmd));
+        slot->Cb.resize(0); slot->CbOff.resize(dl->CmdBuffer.Size);
+        for (int ci = 0; ci < dl->CmdBuffer.Size; ci++)   // the app's callback data may not outlive this frame: copy it now
+        {
+            slot->CbOff[ci] = -1;
+            if (GcFadeCbFrom != NULL && GcFadeCbCopy != NULL && GcFadeCbSize > 0 && dl->CmdBuffer[ci].UserCallback == GcFadeCbFrom)
+            {
+                slot->CbOff[ci] = slot->Cb.Size;
+                slot->Cb.resize(slot->Cb.Size + GcFadeCbSize);
+                GcFadeCbCopy(&dl->CmdBuffer[ci], slot->Cb.Data + slot->CbOff[ci]);
+            }
+        }
+    }
+    for (int k = 0; k < IM_ARRAYSIZE(GcFadeSlots); k++)   // and keep drawing the ones that have gone
+    {
+        GcFadeSlot& sl = GcFadeSlots[k];
+        if (sl.Id == 0)
+            continue;
+        ImGuiWindow* w = FindWindowByID(sl.Id);
+        if (w && w->LastFrameActive == g.FrameCount && !w->Hidden)
+            continue;
+        if (sl.T0 == 0.0f)
+            sl.T0 = now;
+        float a = 1.0f - (now - sl.T0) * 1000.0f / GcPopupFadeMs;
+        if (a <= 0.0f) { sl.Id = 0; sl.Vtx.clear(); sl.Idx.clear(); sl.Cmd.clear(); continue; }
+        a = a * a * (3.0f - 2.0f * a);
+        ImDrawList* fg = GetForegroundDrawList();
+        for (int ci = 0; ci < sl.Cmd.Size; ci++)
+        {
+            const ImDrawCmd& cm = sl.Cmd[ci];
+            if (cm.UserCallback != NULL)
+            {
+                // the app's copyable callback comes back with its copied data; one without data (the matching
+                // «end») is safe to call again; anything else pointed at memory that is gone
+                if (cm.UserCallback == GcFadeCbFrom && GcFadeCbTo != NULL && ci < sl.CbOff.Size && sl.CbOff[ci] >= 0)
+                    fg->AddCallback(GcFadeCbTo, sl.Cb.Data + sl.CbOff[ci], (size_t)GcFadeCbSize);
+                else if (cm.UserCallback != ImDrawCallback_ResetRenderState && cm.UserCallbackData == NULL && cm.UserCallbackDataSize == 0)
+                    fg->AddCallback(cm.UserCallback, NULL);
+                continue;
+            }
+            if (cm.ElemCount == 0)
+                continue;
+            ImTextureRef tex = cm.TexRef;   // the copy is older than the frame: only textures still alive may be used
+            if (tex.GetTexID() != g.IO.Fonts->TexRef.GetTexID())
+            {
+                if (GcFadeSafeTex == 0)
+                    continue;
+                tex = ImTextureRef(GcFadeSafeTex);
+            }
+            fg->PushClipRect(ImVec2(cm.ClipRect.x, cm.ClipRect.y), ImVec2(cm.ClipRect.z, cm.ClipRect.w), false);
+            fg->PushTexture(tex);
+            fg->PrimReserve((int)cm.ElemCount, sl.Vtx.Size);
+            unsigned int base = fg->_VtxCurrentIdx;
+            for (int v = 0; v < sl.Vtx.Size; v++)
+            {
+                const ImDrawVert& src = sl.Vtx[v];
+                unsigned int al = (unsigned int)((src.col >> IM_COL32_A_SHIFT) & 0xFF);
+                al = (unsigned int)(al * a);
+                fg->PrimWriteVtx(src.pos, src.uv, (src.col & ~IM_COL32_A_MASK) | (al << IM_COL32_A_SHIFT));
+            }
+            for (unsigned int e = 0; e < cm.ElemCount; e++)
+                fg->PrimWriteIdx((ImDrawIdx)(base + (unsigned int)sl.Idx[(int)(cm.IdxOffset + e)] + cm.VtxOffset));
+            fg->PopTexture();
+            fg->PopClipRect();
+        }
+    }
+}
+}	// namespace ImGui
+float          GcPopupFadeMs = 0.0f;	// gtacheck: how long a popup takes to fade in (0 = no fade)
+float          GcPopupAlpha = 1.0f;	// gtacheck: the fade of the popup being drawn right now
+ImTextureID    GcFadeSafeTex = 0;	// gtacheck: the live texture to use when replaying a fading popup
+ImDrawCallback GcFadeCbFrom = NULL;	// gtacheck: a callback whose data dies with the frame (the glass constants' ring slot)…
+ImDrawCallback GcFadeCbTo = NULL;	// …replayed through this one, with the data copied into the snapshot
+void         (*GcFadeCbCopy)(const ImDrawCmd*, void*) = NULL;
+int            GcFadeCbSize = 0;
+
+
+
 bool ImGui::ItemAdd(const ImRect& bb, ImGuiID id, const ImRect* nav_bb_arg, ImGuiItemFlags extra_flags)
 {
     ImGuiContext& g = *GImGui;
@@ -11064,6 +11205,9 @@ bool ImGui::ItemAdd(const ImRect& bb, ImGuiID id, const ImRect* nav_bb_arg, ImGu
         if (id == 0 || (id != g.ActiveId && id != g.ActiveIdPreviousFrame && id != g.NavId && id != g.NavActivateId))
             if (!g.ItemUnclipByLog)
                 return false;
+
+    if (GcInspectCollect && GcInspectAdd)	// gtacheck: hand the visible item to the UI inspector
+        GcInspectAdd((unsigned int)id, bb.Min, bb.Max, window->Name, g.FontSize);
 
     // [DEBUG]
 #ifndef IMGUI_DISABLE_DEBUG_TOOLS
