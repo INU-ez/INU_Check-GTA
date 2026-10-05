@@ -1677,6 +1677,7 @@ objs/tobj: фрейм атомика → имя модели из IDE (с сох
 Пересохранённые TXD, исправленные DFF и правленые текстовые файлы пойдут сюда, игра не трогается.\nЗаписи из IMG кладутся по имени, loose-файлы — по своему относительному пути (готово для modloader).	Re-saved TXDs, fixed DFFs and edited text files go here, the game is left alone.\nIMG entries are stored by name, loose files by their relative path (ready for modloader).	Los TXD reguardados, los DFF corregidos y los archivos de texto editados van aquí; el juego no se toca.\nLas entradas de IMG se guardan por nombre, los archivos sueltos por su ruta relativa (listo para modloader).
 Диета TXD…	TXD diet…	Dieta TXD…
 Пакетно ужать все TXD (предел стороны, DXT) в отдельную папку для modloader — прямой ответ на перегруженный стриминг	Shrink every TXD in a batch (side limit, DXT) into a separate folder for modloader — the direct answer to overloaded streaming	Reducir todos los TXD en lote (límite de lado, DXT) a una carpeta aparte para modloader — la respuesta directa al streaming sobrecargado
+Распределить TXD проекта…	Distribute project TXDs…	Distribuir TXD del proyecto…
 ПОКАЗ	VIEW	VISTA
 скрыть ванильное	hide vanilla	ocultar vanilla
 Не показывать проблемы, которые есть и у чистой игры (SA 1.0 US / III / VC) (тот же код, файл, объект и текст):\nигра с ними работает, для кастомной сборки это шум. Переключается без перепроверки.	Hide problems that a stock game (SA 1.0 US / III / VC) has too (same code, file, object and text):\nthe game runs with them, for a custom build they are noise. Toggles without a re-check.	Ocultar problemas que también tiene un juego limpio (SA 1.0 US / III / VC) (mismo código, archivo, objeto y texto):\nel juego funciona con ellos, para una compilación personalizada son ruido. Se alterna sin volver a comprobar.
@@ -1783,6 +1784,8 @@ LOD ДЛЯ «%s»	LOD FOR «%s»	LOD PARA «%s»
 сохранено в %s	saved to %s	guardado en %s
 TXD сохранён в %s	TXD saved to %s	TXD guardado en %s
 Этого TXD нет среди словарей IDE — делить не по чему	This TXD is not among the IDE dictionaries — nothing to split by	Este TXD no está entre los diccionarios del IDE — no hay por qué dividir
+Не удалось прочитать DFF всех моделей: разделение заблокировано, текстуры не считаются лишними	Some model DFFs could not be read: splitting is blocked; textures are not marked as unused	No se pudieron leer todos los DFF: división bloqueada; las texturas no se consideran sobrantes
+Цепочка txdp: словарь сохранён без изменений	txdp chain: dictionary kept unchanged	Cadena txdp: diccionario conservado sin cambios
 Ни одна модель не использует текстуры этого TXD	No model uses the textures of this TXD	Ningún modelo usa las texturas de este TXD
 Все модели связаны общими текстурами — на части не делится (общие текстуры пришлось бы вынести в родительский TXD через txdp)	All the models share textures — it cannot be split (the shared textures would have to go into a parent TXD through txdp)	Todos los modelos comparten texturas — no se puede dividir (las texturas comunes tendrían que ir a un TXD padre mediante txdp)
 %s.txd: текстур %d, моделей %d, %.1f МБ → %s\n	%s.txd: textures %d, models %d, %.1f MB → %s\n	%s.txd: texturas %d, modelos %d, %.1f MB → %s\n
@@ -2606,6 +2609,8 @@ IMG / мод:	IMG / mod:	IMG / mod:
 Файлы без ссылок	Files without references	Archivos sin referencias
 Все категории	All categories	Todas las categorías
 Категории: %d из %d	Categories: %d of %d	Categorías: %d de %d
+Синтетическая проблема: нагрузочный тест UI, не ошибка игры	Synthetic issue: UI stress test, not a game error	Problema sintético: prueba de carga de la interfaz, no es un error del juego
+Тест UI: 12 000 крашей, 154 000 ошибок, 2 600 предупреждений	UI test: 12,000 crashes, 154,000 errors, 2,600 warnings	Prueba de interfaz: 12 000 fallos, 154 000 errores, 2 600 advertencias
 Консоль	Console	Consola
 Вид	View	Vista
 Цветокоррекция всей темы; 1.00 — как задумано	Colour tuning of the whole theme; 1.00 is as designed	Ajuste de color de todo el tema; 1.00 es el diseño original
@@ -2657,6 +2662,9 @@ IMG / мод:	IMG / mod:	IMG / mod:
 заметка	note	nota
 Взять из темы заново	Take from the theme again	Tomar del tema de nuevo
 Диагностика	Diagnostics	Diagnóstico
+Тест UI: 12 000 / 154 000 / 2 600	UI test: 12,000 / 154,000 / 2,600	Prueba de interfaz: 12 000 / 154 000 / 2 600
+Заменяет список синтетическими проблемами и создаёт маркеры карты. Файлы игры и кеш не меняются. «Завершить тест UI» возвращает результат проверки.	Replaces the list with synthetic issues and creates map markers. Game files and cache stay unchanged. "End UI test" restores the check results.	Sustituye la lista por problemas sintéticos y crea marcadores en el mapa. Los archivos del juego y la caché no cambian. "Finalizar prueba de interfaz" restaura los resultados.
+Завершить тест UI	End UI test	Finalizar prueba de interfaz
 Кадр: %.1f FPS, %.2f мс	Frame: %.1f FPS, %.2f ms	Fotograma: %.1f FPS, %.2f ms
 ImGui: %d вершин, %d индексов, окон %d	ImGui: %d vertices, %d indices, %d windows	ImGui: %d vértices, %d índices, %d ventanas
 Версия: %s · игра: %s	Version: %s · game: %s	Versión: %s · juego: %s
@@ -2778,6 +2786,16 @@ IMG %d  IDE %d  IPL %d  моделей %d  DFF %d  TXD %d  COL %d  IFP %d  за 
 светят	shining	iluminan
 «сохранить старый prelit»: у модели его не было — смешивать не с чем	«keep the old prelit»: the model had none — nothing to blend with	«conservar el prelit antiguo»: el modelo no lo tenía — no hay con qué mezclar
 «не трогать яркие ночью»: ночных цветов не было — нечего оставлять	«keep night vertices brighter than»: there were no night colours — nothing to keep	«no tocar los brillantes de noche»: no había colores nocturnos — nada que conservar
+Сжатые записи IMG не поддерживаются — архив не изменён.	Compressed IMG entries are unsupported — the archive was not changed.	No se admiten entradas IMG comprimidas; el archivo no cambió.
+Перекрывающиеся записи IMG — сначала исправь архив.	Overlapping IMG entries — repair the archive first.	Entradas IMG superpuestas: repara primero el archivo.
+Каталог IMG повреждён или не прочитан.	The IMG directory is damaged or could not be read.	El índice IMG está dañado o no se pudo leer.
+Папка бэкапа должна находиться вне сборки.	The backup folder must be outside the game folder.	La carpeta de respaldo debe estar fuera de la carpeta del juego.
+Файлы сборки изменились. Построй план заново.	Game files have changed. Build the plan again.	Los archivos del juego cambiaron. Genera el plan de nuevo.
+Нет изменений для применения.	No changes to apply.	No hay cambios que aplicar.
+Готово: новых TXD — %d, удалено словарей — %d, обновлено IDE — %d.	Done: %d new TXDs, %d dictionaries removed, %d IDE files updated.	Listo: %d TXD nuevos, %d diccionarios eliminados y %d archivos IDE actualizados.
+Применение не завершено. Изменения отменены, сборка восстановлена.	Apply failed. Changes were rolled back and the game folder was restored.	La aplicación falló. Se deshicieron los cambios y se restauró la carpeta del juego.
+Не удалось восстановить все файлы. Закрой программу и запусти Restore-All.bat из бэкапа.	Not all files could be restored. Close the program and run Restore-All.bat from the backup.	No se pudieron restaurar todos los archivos. Cierra el programa y ejecuta Restore-All.bat desde el respaldo.
+Подготовка или бэкап не завершены. Сборка не изменена.	Preparation or backup failed. The game folder was not changed.	Falló la preparación o el respaldo. La carpeta del juego no cambió.
 Строка в текстовом файле данных длиннее 511 символов.	A line in a text data file is longer than 511 characters.	Una línea de un archivo de datos de texto tiene más de 511 caracteres.
 Игра читает строки буфером в 512 байт: хвост станет отдельной «строкой» и разберётся как мусор.	The game reads lines through a 512-byte buffer: the tail becomes a separate «line» and is parsed as garbage.	El juego lee las líneas con un búfer de 512 bytes: la cola se convierte en una «línea» aparte y se analiza como basura.
 Укоротить строку или разбить её на две.	Shorten the line or split it in two.	Acortar la línea o dividirla en dos.
@@ -4305,6 +4323,68 @@ GEOMETRY обрезан	GEOMETRY truncated	GEOMETRY truncado
 у LOD не было UV — добавлен набор 0 (нули у его вершин)	the LOD had no UV — set 0 added (zeros on its vertices)	el LOD no tenía UV — se añadió el conjunto 0 (ceros en sus vértices)
 плагин %s геометрии LOD — на каждую вершину, с новым числом вершин не переносится, удалён	plugin %s of the LOD geometry is per-vertex and cannot follow the new vertex count — removed	el plugin %s de la geometría del LOD es por vértice y no sigue el nuevo número de vértices — eliminado
 BinMesh LOD был tristrip — пересобран как trilist	the LOD's BinMesh was a tristrip — rebuilt as a trilist	el BinMesh del LOD era tristrip — reconstruido como trilist
+Операция прервана. Проверь журнал и бэкап.	The operation was interrupted. Check the log and backup.	La operación se interrumpió. Revisa el registro y el respaldo.
+TXD не прочитан — пропущен	TXD could not be read — skipped	No se pudo leer el TXD — omitido
+Системный TXD, txdp или внешние ссылки — сохранён	System TXD, txdp or external references — retained	TXD del sistema, txdp o referencias externas: conservado
+Остаются модели с исходным TXD — сохранён	Models still reference the original TXD — retained	Hay modelos que siguen usando el TXD original: conservado
+Неиспользуемый словарь будет удалён	Unused dictionary will be removed	Se eliminará el diccionario sin usar
+Не удалось определить путь IDE. Сборка не изменена.	Could not resolve the IDE path. The game folder was not changed.	No se pudo resolver la ruta IDE. La carpeta del juego no cambió.
+Не удалось прочитать IDE: %s. Сборка не изменена.	Could not read IDE file %s. The game folder was not changed.	No se pudo leer el archivo IDE %s. La carpeta del juego no cambió.
+Строка %d файла IDE %s уже отличается от плана. Сборка не изменена; построй план заново.	IDE line %d in %s no longer matches the plan. The game folder was not changed; build the plan again.	La línea IDE %d de %s ya no coincide con el plan. La carpeta del juego no cambió; genera el plan de nuevo.
+Не все строки IDE найдены в %s. Сборка не изменена; построй план заново.	Not all planned lines were found in IDE file %s. The game folder was not changed; build the plan again.	No se encontraron todas las líneas previstas en %s. La carpeta del juego no cambió; genera el plan de nuevo.
+Сборка или настройки проверки изменились после построения плана.	The game files or check settings changed after the plan was built.	Los archivos del juego o la configuración cambiaron después de crear el plan.
+Имя нового TXD уже занято loose-файлом.	The new TXD name is already used by a loose file.	El nombre del TXD nuevo ya está ocupado por un archivo suelto.
+Для выбранного TXD не найден исходный IMG или loose-файл.	The selected TXD has no source IMG or loose file.	No se encontró el IMG de origen ni un archivo suelto para el TXD seleccionado.
+Не удалось повторно прочитать TXD/DFF для проверки плана.	Could not reread a TXD/DFF while validating the plan.	No se pudo volver a leer un TXD/DFF al validar el plan.
+TXD или DFF изменился после анализа. Построй план заново.	A TXD or DFF changed after scanning. Build the plan again.	Un TXD o DFF cambió después del análisis. Genera el plan de nuevo.
+Не удалось открыть каталог IMG для проверки.	Could not open an IMG directory for validation.	No se pudo abrir un índice IMG para validarlo.
+Каталог IMG изменился после анализа. Построй план заново.	An IMG directory changed after scanning. Build the plan again.	Un índice IMG cambió después del análisis. Genera el plan de nuevo.
+Размер записи IMG изменился после анализа. Построй план заново.	An IMG entry size changed after scanning. Build the plan again.	El tamaño de una entrada IMG cambió después del análisis. Genera el plan de nuevo.
+Один физический IDE-файл подключён разными путями с несовместимыми правками.	The same physical IDE file is referenced through different paths with conflicting edits.	El mismo archivo IDE físico está referenciado con rutas distintas y cambios incompatibles.
+Не удалось прочитать IDE при проверке ссылок на удаляемые TXD.	Could not read an IDE while checking references to TXDs being removed.	No se pudo leer un IDE al comprobar referencias a TXD que se eliminarán.
+В IDE %s осталась ссылка на удаляемый TXD %s.	IDE file %s still references TXD %s, which is planned for removal.	El IDE %s aún referencia el TXD %s que se eliminará.
+IDE %s изменился после построения плана. Построй план заново.	IDE file %s changed after the plan was built. Build the plan again.	El IDE %s cambió después de crear el plan. Genera el plan de nuevo.
+Не удалось подготовить изменённый IDE в папке бэкапа.	Could not stage the updated IDE in the backup folder.	No se pudo preparar el IDE actualizado en la carpeta de respaldo.
+Подготовка не завершена. Сборка не изменена; построй план заново.	Preparation failed. The game folder was not changed; build the plan again.	La preparación falló. La carpeta del juego no cambió; genera el plan de nuevo.
+Распределение TXD проекта	Project TXD distribution	Distribución de TXD del proyecto
+Освобождено в сборке: %.2f МБ	Space freed in the game folder: %.2f MB	Espacio liberado en la carpeta del juego: %.2f MB
+Размер сборки вырос на %.2f МБ	The game folder grew by %.2f MB	La carpeta del juego creció %.2f MB
+Оригиналы сохранены в бэкапе. Для полного отката закрой игру и INU Check, затем запусти Restore-All.bat из его папки.	Originals are backed up. Close the game and INU Check, then run Restore-All.bat from the backup folder for a full rollback.	Los originales están respaldados. Cierra el juego e INU Check y ejecuta Restore-All.bat desde la carpeta de respaldo para deshacer todos los cambios.
+Открыть бэкап	Open backup	Abrir respaldo
+Изменения применяются прямо в сборке: новые TXD, обновлённые IDE и удаление лишних словарей. Выбранная папка нужна для бэкапа.	Changes are applied directly to the game: new TXDs, updated IDEs and unused dictionaries removed. Choose a folder for the backup.	Los cambios se aplican al juego: TXD nuevos, IDE actualizados y diccionarios sin usar eliminados. Elige una carpeta para el respaldo.
+Проверено TXD: %d из %d	TXDs checked: %d of %d	TXD revisados: %d de %d
+Без изменений или пропущено: %d TXD	Unchanged or skipped: %d TXDs	Sin cambios u omitidos: %d TXD
+Подробности и выбор TXD	Details and TXD selection	Detalles y selección de TXD
+Разделить	Split	Dividir
+Убрать лишние текстуры	Remove unused textures	Quitar texturas sin usar
+Без изменений	Unchanged	Sin cambios
+К обработке: %d TXD · моделей: %d	To process: %d TXDs · models: %d	Por procesar: %d TXD · modelos: %d
+Новых TXD: %d · данных текстур: ≈ %.2f МБ	New TXDs: %d · texture data: ≈ %.2f MB	TXD nuevos: %d · datos de texturas: ≈ %.2f MB
+Будет удалено исходных словарей: %d	Original dictionaries to remove: %d	Diccionarios originales por eliminar: %d
+Будет удалено неиспользуемых текстур: %d	Unused textures to remove: %d	Texturas sin usar por eliminar: %d
+Предварительный итог — анализ ещё идёт.	Preliminary totals — analysis is still running.	Totales provisionales: el análisis sigue en curso.
+Подготовлено TXD: %d из %d	TXDs prepared: %d of %d	TXD preparados: %d de %d
+Подготовка	Preparation	Preparación
+Бэкап	Backup	Respaldo
+Перепаковка IMG	Repacking IMG	Reempaquetando IMG
+Применение в сборке	Applying to the game	Aplicando al juego
+Восстановление	Restoring	Restauración
+Применить в сборке…	Apply to game…	Aplicar al juego…
+Сначала сохрани несохранённые правки TXD и построй план заново.	Save pending TXD edits first, then build the plan again.	Guarda primero los cambios pendientes de TXD y genera el plan de nuevo.
+Не удалось создать папку бэкапа.	Could not create the backup folder.	No se pudo crear la carpeta de respaldo.
+IDE изменились или не прочитаны. Построй план заново.	IDE files changed or could not be read. Rebuild the plan.	Los IDE cambiaron o no se pudieron leer. Vuelve a generar el plan.
+Не удалось восстановить все файлы. Закрой программу и запусти Restore.ps1 из бэкапа.	Not all files could be restored. Close the program and run Restore.ps1 from the backup.	No se pudieron restaurar todos los archivos. Cierra el programa y ejecuta Restore.ps1 desde el respaldo.
+Оригиналы сохранены в бэкапе. Для полного отката запусти Restore.ps1 из его папки.	Originals are backed up. For a full rollback, run Restore.ps1 from the backup folder.	Los originales están respaldados. Para deshacer todos los cambios, ejecuta Restore.ps1 desde la carpeta de respaldo.
+Не войдут в пакет: %d неиспользуемых текстур	Excluded from the package: %d unused textures	No se incluirán en el paquete: %d texturas sin usar
+Готово: TXD — %d, файлов IDE — %d. Установи их вместе.	Done: %d TXDs, %d IDE files. Install them together.	Listo: %d TXD y %d archivos IDE. Instálalos juntos.
+Экспорт не завершён. Не устанавливай неполный пакет.	Export incomplete. Do not install the partial package.	Exportación incompleta. No instales el paquete parcial.
+Пакет готов. Установи TXD вместе с копиями IDE.	Package ready. Install TXDs together with the IDE copies.	Paquete listo. Instala los TXD junto con las copias IDE.
+Модели с общими текстурами останутся вместе. Качество сохраняется; исходные файлы не меняются.	Models sharing textures stay together. Quality is preserved; source files remain unchanged.	Los modelos con texturas compartidas permanecen juntos. Se conserva la calidad; los archivos originales no cambian.
+Записано TXD: %d из %d	TXDs written: %d of %d	TXD guardados: %d de %d
+Экспортировать распределение…	Export distribution…	Exportar distribución…
+Не удалось создать папку экспорта.	Could not create the export folder.	No se pudo crear la carpeta de exportación.
+Группы моделей с общими текстурами остаются вместе. Формат и качество текстур сохраняются. Исходные TXD и IDE не меняются: экспортируется отдельный пакет.	Models sharing textures stay together. Texture format and quality are preserved. Source TXDs and IDEs remain unchanged: a separate package is exported.	Los modelos que comparten texturas permanecen juntos. Se conservan el formato y la calidad. Los TXD e IDE originales no cambian: se exporta un paquete separado.
+МБ: исходный словарь → крупнейшая новая группа. Словари без моделей, цепочки txdp и непрочитанные данные пропускаются. Оригиналы сохраняются для скриптов и других пользователей.	MB: source dictionary → largest new group. Dictionaries without models, txdp chains and unreadable data are skipped. Originals are retained for scripts and other users.	MB: diccionario original → mayor grupo nuevo. Se omiten diccionarios sin modelos, cadenas txdp y datos ilegibles. Los originales se conservan para scripts y otros usuarios.
 Новые .col / .txd лежат в gta_check_out — добавь их в gta3.img (или поставь modloader).\n	New .col / .txd files are in gta_check_out — add them to gta3.img (or install modloader).\n	Los nuevos archivos .col / .txd están en gta_check_out — añádelos a gta3.img (o instala modloader).\n
 Скрыто игнорируемых: %d (gta_check_ignore.txt)\n	Ignored hidden: %d (gta_check_ignore.txt)\n	Ignorados ocultos: %d (gta_check_ignore.txt)\n
 Ставить точки	Place points	Colocar puntos

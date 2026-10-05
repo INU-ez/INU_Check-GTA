@@ -125,6 +125,7 @@ def build(order, rows):
 
 def cmd_sync():
     files = sorted(glob.glob(os.path.join(HERE, '*.cpp')))
+    files += [os.path.join(HERE, 'project_txd_ui.h')]
     keys = extract(files)
     rows, old_order = read_tsv()
     new = [k for k in keys if k not in rows]

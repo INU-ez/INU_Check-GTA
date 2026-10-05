@@ -34,6 +34,9 @@
 #include <tuple>
 #include <algorithm>
 #include <functional>
+#include <future>
+#include <filesystem>
+#include "project_txd_apply.h"
 #include <stdlib.h>
 #include <time.h>
 #include <stdarg.h>
@@ -53,6 +56,17 @@ static rw::World *gWorld;
 static Options gOpt;
 static GameData *gData;
 static Report gReport;
+static bool gIssueStress;
+static std::vector<Issue> gIssueStressSaved;
+static Counters gIssueStressCounters;
+static void issueStressRestore();
+static void issueStressStart();
+static void projectTxdOpen();
+static void drawProjectTxd();
+static void projectTxdTest();
+static bool projectTxdBusy();
+static void projectTxdPoll();
+static void projectTxdRefreshViews();
 static Progress gProgress;
 static std::thread gWorker;
 static char gRootBuf[1024];
@@ -989,6 +1003,8 @@ static PartialCheck gPartial;
 static void startCheck();
 static void startCheckPartial(int cat)
 {
+	if(projectTxdBusy()) return;
+	issueStressRestore();
 	if(gProgress.running || !gData || !gFlagsDone) return;
 	PartialCheck pc; pc.active = true;
 	auto phaseKeep = [&](bool run, std::initializer_list<int> cats){ if(!run) for(int c : cats) pc.keep.insert(c); };
@@ -1162,6 +1178,7 @@ static bool cacheLoad(const std::string &root, uint64_t key, std::vector<Issue> 
 // the 3D map, the map and the previews have something to work with
 static void startFromCache(const std::vector<Issue> &rows, uint64_t key, uint64_t stamp)
 {
+	if(projectTxdBusy()) return;
 	if(gProgress.running) return;
 	if(gWorker.joinable()) gWorker.join();
 	gOpt.root = trim(gRootBuf);
@@ -1191,7 +1208,9 @@ static void startFromCache(const std::vector<Issue> &rows, uint64_t key, uint64_
 
 static void startCheck()
 {
+	if(projectTxdBusy()) return;
 	if(gProgress.running) return;
+	issueStressRestore();
 	if(gWorker.joinable()) gWorker.join();
 	gOpt.root = trim(gRootBuf);
 	if(gOpt.root.empty() || !dirExists(gOpt.root)) { gStatus = T("inu_check.exe должен лежать в папке игры (рядом с gta_sa.exe)"); gStatusUntil = nowMs() + 6000; return; }
@@ -3231,6 +3250,7 @@ static void drawSettingsPopup()
 				ImGui::CloseCurrentPopup();
 			}
 			if(ImGui::IsItemHovered()) uiTip("%s", T("Пакетно ужать все TXD (предел стороны, DXT) в отдельную папку для modloader — прямой ответ на перегруженный стриминг"));
+			if(btn(T("Распределить TXD проекта…"))){ projectTxdOpen(); ImGui::CloseCurrentPopup(); }
 		}
 	}
 	ImGui::Spacing();
@@ -4262,16 +4282,47 @@ static void tvSaveToFolder() { std::string dir; if(pickFolder(dir)) tvSaveTo(dir
 // model uses (QLT-12) are left out.
 struct TxdSplitGroup { std::string name; std::vector<int> models; std::vector<int> texs; double mb; };
 struct TxdSplit { bool open; std::vector<TxdSplitGroup> groups; std::vector<int> dead, noTex; std::string note; TxdSplit() : open(false) {} };
-static TxdSplit gSplit;
-static void tvPlanSplit()
+static void txdSplitCollectUsedTextures(const GDff &d, std::set<std::string> &used)
 {
-	gSplit = TxdSplit(); gSplit.open = true;
+	// Preserve every texture named by the DFF material list, including slots
+	// not currently referenced by a triangle. Such slots can still be consumed
+	// by model variants or runtime material selection.
+	for(const GGeom &geo:d.geoms) for(const GMat &mat:geo.mats){
+		if(!mat.textured) continue;
+		if(!mat.tex.empty()) used.insert(lower(mat.tex));
+		if(!mat.mask.empty()) used.insert(lower(mat.mask));
+	}
+}
+static TxdSplit gSplit;
+static void planTxdSplit(const TxdFile &file, const std::string &logical, TxdSplit &plan)
+{
+	plan = TxdSplit(); plan.open = true;
 	if(!gData) return;
-	std::string stemName = lower(stem(basename(gTv.logical)));
+	std::string stemName = lower(stem(basename(logical)));
 	int slot = gData->findTxdSlot(stemName);
-	if(slot < 0){ gSplit.note = T("Этого TXD нет среди словарей IDE — делить не по чему"); return; }
-	std::map<std::string, int> texIdx; for(size_t i = 0; i < gTv.file.tex.size(); i++) texIdx[lower(gTv.file.tex[i].name)] = (int)i;
+	if(slot < 0){ plan.note = T("Этого TXD нет среди словарей IDE — делить не по чему"); return; }
+	std::map<std::string, int> texIdx; for(size_t i = 0; i < file.tex.size(); i++) texIdx[lower(file.tex[i].name)] = (int)i;
 	std::vector<int> models; for(size_t i = 0; i < gData->objs.size(); i++) if(gData->objs[i].txdSlot == slot) models.push_back((int)i);
+	// Cached reports do not contain model/material metadata. Read it from DFF.
+	for(int mi : models){
+		ObjDef &o = gData->objs[(size_t)mi];
+		if(o.dffFailed){ plan.note = T("Не удалось прочитать DFF всех моделей: разделение заблокировано, текстуры не считаются лишними"); return; }
+		// dffTex in the general check cache contains only triangle-used materials.
+		// Splitting must re-read the DFF to retain every material-list reference.
+		std::vector<uint8_t> bytes; std::string err; GDff d;
+		int entry = o.dffEntry >= 0 ? o.dffEntry : gData->findEntry(o.name + ".dff");
+		if(entry < 0 || !ReadEntryTrimmed(*gData, entry, bytes, err) || !ParseDffGeoms(bytes, d, err)){
+			plan.note = T("Не удалось прочитать DFF всех моделей: разделение заблокировано, текстуры не считаются лишними"); return;
+		}
+		std::set<std::string> used;
+		if(d.geoms.empty()){ plan.note = T("Не удалось прочитать DFF всех моделей: разделение заблокировано, текстуры не считаются лишними"); return; }
+		for(const GGeom &geo : d.geoms) if(geo.native){ plan.note = T("Не удалось прочитать DFF всех моделей: разделение заблокировано, текстуры не считаются лишними"); return; }
+		txdSplitCollectUsedTextures(d,used);
+		o.dffTex.assign(used.begin(), used.end());
+	}
+	bool parentChain = gData->txdSlots[(size_t)slot].parent >= 0;
+	for(const TxdSlot &t : gData->txdSlots) if(t.parent == slot) parentChain = true;
+	if(parentChain){ plan.note = T("Цепочка txdp: словарь сохранён без изменений"); return; }
 	// union-find over the models: two models sharing a texture of this TXD are joined
 	std::vector<int> parent(models.size()); for(size_t i = 0; i < parent.size(); i++) parent[i] = (int)i;
 	std::function<int(int)> find = [&](int a){ while(parent[(size_t)a] != a){ parent[(size_t)a] = parent[(size_t)parent[(size_t)a]]; a = parent[(size_t)a]; } return a; };
@@ -4288,26 +4339,31 @@ static void tvPlanSplit()
 	}
 	std::map<int, TxdSplitGroup> comps;
 	for(size_t m = 0; m < models.size(); m++){
-		if(uses[m].empty()){ gSplit.noTex.push_back(models[m]); continue; }	// a model whose textures are all elsewhere (parent TXD / generic): stays on the original
+		if(uses[m].empty()){ plan.noTex.push_back(models[m]); continue; }	// a model whose textures are all elsewhere (parent TXD / generic): stays on the original
 		TxdSplitGroup &g = comps[find((int)m)]; g.models.push_back(models[m]);
 		for(size_t k = 0; k < uses[m].size(); k++) if(std::find(g.texs.begin(), g.texs.end(), uses[m][k]) == g.texs.end()) g.texs.push_back(uses[m][k]);
 	}
 	std::set<int> used; for(auto &kv : comps) for(size_t k = 0; k < kv.second.texs.size(); k++) used.insert(kv.second.texs[k]);
-	for(size_t i = 0; i < gTv.file.tex.size(); i++) if(!used.count((int)i)) gSplit.dead.push_back((int)i);
-	for(auto &kv : comps) gSplit.groups.push_back(kv.second);
-	std::sort(gSplit.groups.begin(), gSplit.groups.end(), [](const TxdSplitGroup &a, const TxdSplitGroup &b){ return a.texs.size() > b.texs.size(); });
+	for(size_t i = 0; i < file.tex.size(); i++) if(!used.count((int)i)) plan.dead.push_back((int)i);
+	for(auto &kv : comps) plan.groups.push_back(kv.second);
+	std::sort(plan.groups.begin(), plan.groups.end(), [](const TxdSplitGroup &a, const TxdSplitGroup &b){ return a.texs.size() > b.texs.size(); });
 	// names: <stem>_N within the 19-character IMG limit, not clashing with an existing dictionary
 	std::string base = stemName; if(base.size() > 16) base = base.substr(0, 16);
 	int n = 1;
-	for(size_t g = 0; g < gSplit.groups.size(); g++){
+	for(size_t g = 0; g < plan.groups.size(); g++){
 		std::string nm;
 		do { nm = fmt("%s_%d", base.c_str(), n++); } while(gData->findTxdSlot(nm) >= 0);
-		gSplit.groups[g].name = nm;
-		double bytes = 0; for(size_t k = 0; k < gSplit.groups[g].texs.size(); k++) for(size_t L = 0; L < gTv.file.tex[(size_t)gSplit.groups[g].texs[k]].levels.size(); L++) bytes += (double)gTv.file.tex[(size_t)gSplit.groups[g].texs[k]].levels[L].size();
-		gSplit.groups[g].mb = bytes / 1048576.0;
+		plan.groups[g].name = nm;
+		double bytes = 0; for(size_t k = 0; k < plan.groups[g].texs.size(); k++) for(size_t L = 0; L < file.tex[(size_t)plan.groups[g].texs[k]].levels.size(); L++) bytes += (double)file.tex[(size_t)plan.groups[g].texs[k]].levels[L].size();
+		plan.groups[g].mb = bytes / 1048576.0;
 	}
-	if(gSplit.groups.size() <= 1) gSplit.note = gSplit.groups.empty() ? T("Ни одна модель не использует текстуры этого TXD") : T("Все модели связаны общими текстурами — на части не делится (общие текстуры пришлось бы вынести в родительский TXD через txdp)");
+	if(plan.groups.size() <= 1) plan.note = plan.groups.empty() ? T("Ни одна модель не использует текстуры этого TXD") : T("Все модели связаны общими текстурами — на части не делится (общие текстуры пришлось бы вынести в родительский TXD через txdp)");
 }
+static void tvPlanSplit()
+{
+	planTxdSplit(gTv.file, gTv.logical, gSplit);
+}
+#include "project_txd_ui.h"
 static void tvApplySplit()
 {
 	if(!gData || gSplit.groups.size() < 2) return;
@@ -4423,7 +4479,7 @@ static void drawTxdView(bool embedded)
 	}
 	{	// the list's actions, left, in one strip: add | remove | sort, then split
 		if(!gTv.file.ok) ImGui::BeginDisabled();
-		if(segButton("addtex", T("Добавить…"), false, ImDrawFlags_RoundCornersLeft, false, false, true)){ std::string p; if(pickImageFile(p)) tvAddImage(p); }
+		if(segButton("addtex", T("Добавить…"), false, ImDrawFlags_RoundCornersLeft, true, false, true)){ std::string p; if(pickImageFile(p)) tvAddImage(p); }
 		if(ImGui::IsItemHovered()) uiTip("%s", T("PNG / TGA / BMP → текстура с именем файла (размер до степени двойки, мипы, DXT по настройке «сжимать в DXT»). Можно просто перетащить файл на окно."));
 		ImGui::SameLine(0, 0);
 		bool hasSel = gTv.sel >= 0 && gTv.sel < (int)gTv.file.tex.size();
@@ -4768,6 +4824,10 @@ static void mvTestStep()
 	if(!gMvTest) return;
 	if(gMvTestFrames < 0){
 		if(!gProgress.finished || gProgress.running || gSnapshot.empty() || !gFlagsDone) return;
+		if(const char *mode=getenv("GTACHECK_PROJECTTXD")){
+			projectTxdTest();
+			if(strcmp(mode,"ui")!=0){ PostQuitMessage(0); return; }
+		}
 		if(getenv("GTACHECK_PARTIALTEST") && gMvRecheck == 0){	// GTACHECK_PARTIALTEST=<category index>: a partial re-check, counts per category before / after
 			gMvRecheck = 1;
 			std::string line = "partial before:"; for(int k = 0; k < CAT_NUM; k++) if(gReport.counters.byCat[k]) line += fmt(" %s=%d", categoryName(k), gReport.counters.byCat[k]);
@@ -4832,6 +4892,7 @@ static void mvTestStep()
 		}
 		if(getenv("GTACHECK_UNUSEDTEST")){ runUnused(); mvChkWrite(fmt("unused: %d files, %.1f MB\n", (int)gUnused.items.size(), gUnused.bytes / 1048576.0).c_str()); }	// GTACHECK_UNUSEDTEST=1: the «Лишнее» list instead of the table
 		gRightOn = true; rpForce(worldTest ? RP_WORLD : mapTest ? RP_MAP : getenv("GTACHECK_TEXTTEST") ? RP_TEXT : extOf(want) == "txd" ? RP_TXD : RP_MODEL); gMvTestFrames = 0;	// GTACHECK_TEXTTEST=1: the editor
+		if(getenv("GTACHECK_ISSUESTRESS")) issueStressStart();
 		mvChk("row selected");
 	}else if(++gMvTestFrames == 30 && getenv("GTACHECK_LODLINKTEST")){	// GTACHECK_LODLINKTEST=<ipl>|<model id>|<lod id>|<1 link / 0 clear>: LinkIplLods on the game folder
 		char ipl[260]; int mid = 0, lid = 0, lk = 1;
@@ -4971,6 +5032,11 @@ static void mvTestStep()
 	}else if(gMvTestFrames > (gRpWant == RP_WORLD ? 90 : 30)){
 		mvChkWrite(("done: " + gMv.err + " | " + gMv.info + "\n").c_str());
 		if(gRpWant == RP_MAP) mvChkWrite(fmt("map: %dx%d grid %d markers %d tex %s err [%s] view %.1f,%.1f scale %.3f\n", gMap.size, gMap.size, gMap.grid, (int)gMap.markers.size(), gMap.tex ? "yes" : "no", gMap.err.c_str(), gMap.cx, gMap.cy, gMap.scale).c_str());
+		if(getenv("GTACHECK_ISSUESTRESS")){
+			mvChkWrite(fmt("issue stress: rows %d crash %d error %d warn %d markers %d\n", (int)gSnapshot.size(), visibleCount(SEV_FATAL), visibleCount(SEV_ERROR), visibleCount(SEV_WARN), (int)gMap.markers.size()).c_str());
+			size_t saved = gIssueStressSaved.size(); issueStressRestore();
+			mvChkWrite(fmt("issue stress restore: %s (%d rows)\n", !gIssueStress && gSnapshot.size() == saved ? "OK" : "FAILED", (int)gSnapshot.size()).c_str());
+		}
 		if(gRpWant == RP_WORLD){
 			int valid = 0, lods = 0, marked = 0, failed = 0;
 			for(size_t i = 0; i < gWv.insts.size(); i++){ if(gWv.insts[i].valid) valid++; if(gWv.insts[i].isLod) lods++; if(gWv.insts[i].issue >= 0) marked++; }
@@ -7922,6 +7988,18 @@ static void mapBuildMarkers()
 {
 	gMap.markers.clear(); gMapDirty = false;
 	if(!gData) return;
+	if(gIssueStress){
+		// One marker per synthetic issue: no changes to game placements.
+		float half = gData->isSA() ? 3000.0f : 2000.0f;
+		for(int idx : gFiltered){
+			MapMarker m; m.issue = idx; m.sev = gSnapshot[(size_t)idx].sev;
+			m.inst = gData->insts.empty() ? -1 : idx % (int)gData->insts.size();
+			m.x = ((idx % 500) + 0.5f) / 500.0f * half * 2 - half;
+			m.y = ((idx / 500) + 0.5f) / 338.0f * half * 2 - half;
+			gMap.markers.push_back(m);
+		}
+		return;
+	}
 	std::unordered_map<int, size_t> byInst;
 	auto addInst = [&](int instIdx, int sev, int issue){
 		if(instIdx < 0 || instIdx >= (int)gData->insts.size()) return;
@@ -8192,6 +8270,10 @@ static void mapDraw()
 	dl->PushClipRect(p, ImVec2(p.x + avail.x, p.y + avail.y), true);
 	dl->AddRectFilled(p, ImVec2(p.x + avail.x, p.y + avail.y), IM_COL32(18, 22, 28, 255));
 	if(gShotPending && gShotPath.empty()) gShotRect = ImVec4(p.x, p.y, p.x + avail.x, p.y + avail.y);
+	if(gMvTest && getenv("GTACHECK_MAPSTRESS")){
+		// Regression: force the map image and subsequent text past 64K vertices.
+		for(int i = 0; i < 18000; i++) dl->AddRectFilled(p, ImVec2(p.x + 1, p.y + 1), IM_COL32(0, 0, 0, 1));
+	}
 	dl->AddImage((ImTextureID)(uintptr_t)gMap.tex, toScreen(-gMap.half, gMap.half), toScreen(gMap.half, -gMap.half), ImVec2(0, 0), ImVec2(1, 1));
 	if(gDistrict.on && gDistrict.planDiv == gDistrict.opt.div && !gDistrict.plan.cells.empty()){	// the district cells: a colour each, the count and the weight when the cell is wide enough
 		const DistrictPlan &dp = gDistrict.plan;
@@ -8240,7 +8322,11 @@ static void mapDraw()
 		if(hovered){ float dx = io.MousePos.x - sp.x, dy = io.MousePos.y - sp.y, d2 = dx * dx + dy * dy; if(d2 < 100.0f && d2 < best){ best = d2; hoverIdx = (int)i; } }
 	}
 	dl->PopClipRect();
-	if(hoverIdx >= 0){
+	if(hoverIdx >= 0 && gIssueStress){
+		const MapMarker &m = gMap.markers[(size_t)hoverIdx];
+		uiTip("%s", gSnapshot[(size_t)m.issue].msg.c_str());
+		if(ImGui::IsMouseClicked(0)){ gSelected = m.issue; gRpOverrideOn = false; gRevealSel = true; }
+	}else if(hoverIdx >= 0){
 		const MapMarker &m = gMap.markers[(size_t)hoverIdx];
 		const Issue &is = gSnapshot[(size_t)m.issue];
 		const Inst &in = gData->insts[(size_t)m.inst];
@@ -8303,6 +8389,14 @@ static void worldClear()
 	for(auto &kv : gWv.models) worldUnloadModel(kv.second);
 	gWv.models.clear(); gWv.txds.clear(); gWv.insts.clear(); gWv.built = false; gWv.loadedModels = 0; gWv.cols.clear(); gWv.colFailed.clear(); colMeshFreeAll();
 	gWv.weightMb.clear(); gWv.catIndex.clear(); gWv.legend.clear(); gWv.legendMode = -1; gWv.density.clear();
+}
+
+static void projectTxdRefreshViews()
+{
+	if(!gProjectTxd.refresh) return;
+	gProjectTxd.refresh=false;
+	worldClear(); mvClear(); gMv.key.clear(); tvDropPreview(); gTv.open=false; rpInvalidate();
+	startCheck();
 }
 
 static rw::V3d worldPoint(const rw::Matrix &m, const rw::V3d &p);
@@ -12186,6 +12280,42 @@ static void clampWindowsBelowCaption()
 // strength of the effects), diagnostics of the running program and the switches that are useful while
 // working on it. Everything here is saved in the ini when the slider is let go.
 
+static void issueStressRestore()
+{
+	if(!gIssueStress) return;
+	{
+		std::lock_guard<std::mutex> lock(gReport.mtx);
+		gReport.issues.swap(gIssueStressSaved); gIssueStressSaved.clear();
+		gReport.counters = gIssueStressCounters; gReport.version++;
+	}
+	gIssueStress = false; gSelected = -1; gMulti.clear(); gTabs.clear();
+	syncSnapshot(); applyIssueFlags(); applyFilter(); gMapDirty = true;
+}
+
+static void issueStressStart()
+{
+	if(gIssueStress || gProgress.running || !gData || !gFlagsDone) return;
+	std::vector<Issue> rows; rows.reserve(168600);
+	Counters counts = {};
+	for(int i = 0; i < 168600; i++){
+		Issue is; is.cat = CAT_DFF;
+		is.sev = i < 12000 ? SEV_FATAL : i < 166000 ? SEV_ERROR : SEV_WARN;
+		is.code = "TEST-UI"; is.file = fmt("[UI test]/%06d", i + 1);
+		is.object = fmt("UI test %d", i + 1);
+		is.msg = T("Синтетическая проблема: нагрузочный тест UI, не ошибка игры");
+		is.msgRu = "Синтетическая проблема: нагрузочный тест UI, не ошибка игры";
+		counts.bySev[is.sev]++; counts.byCat[is.cat]++; rows.push_back(std::move(is));
+	}
+	{
+		std::lock_guard<std::mutex> lock(gReport.mtx);
+		gIssueStressSaved.swap(gReport.issues); gIssueStressCounters = gReport.counters;
+		gReport.issues.swap(rows); gReport.counters = counts; gReport.version++;
+	}
+	gIssueStress = true; gSelected = -1; gMulti.clear(); gTabs.clear();
+	syncSnapshot(); applyIssueFlags(); applyFilter(); gMapDirty = true;
+	gStatus = T("Тест UI: 12 000 крашей, 154 000 ошибок, 2 600 предупреждений"); gStatusUntil = nowMs() + 10000;
+}
+
 static void drawConsoleWindow()
 {
 	if(!gConsoleOpen) return;
@@ -12318,6 +12448,12 @@ static void drawConsoleWindow()
 				ImGui::EndTabItem();
 			}
 			if(ImGui::BeginTabItem(T("Диагностика"))){
+				ImGui::BeginDisabled(gProgress.running || !gData || !gFlagsDone);
+				if(btn(T("Тест UI: 12 000 / 154 000 / 2 600"))) issueStressStart();
+				if(ImGui::IsItemHovered()) uiTip("%s", T("Заменяет список синтетическими проблемами и создаёт маркеры карты. Файлы игры и кеш не меняются. «Завершить тест UI» возвращает результат проверки."));
+				if(gIssueStress){ ImGui::SameLine(); if(btn(T("Завершить тест UI"))) issueStressRestore(); }
+				ImGui::EndDisabled();
+				ImGui::Separator();
 				ImGuiIO &io = ImGui::GetIO();
 				ImGui::Text("%s", fmt(T("Кадр: %.1f FPS, %.2f мс"), io.Framerate, 1000.0f / (io.Framerate > 0.01f ? io.Framerate : 1.0f)).c_str());
 				ImGui::Text("%s", fmt(T("ImGui: %d вершин, %d индексов, окон %d"), io.MetricsRenderVertices, io.MetricsRenderIndices, io.MetricsRenderWindows).c_str());
@@ -12766,6 +12902,14 @@ static bool gGlassFillL = true, gGlassFillR = true;	// false: draw that fillet's
 static float gGlassCutX0 = 0.0f, gGlassCutX1 = 0.0f;	// where a menu hangs off the top strip: its hairline stops there
 static int gGlassCutFrame = -10;
 
+static bool glassWorldVisible()
+{
+	// Loading-screen art and old UI snapshots are not a visible 3D map.
+	return gData && gProgress.finished && !gProgress.running && gGlassTex && gGlassFrame >= 0 &&
+		ImGui::GetFrameCount() - gGlassFrame <= 1 &&
+		(gEditor || (gRightOn && gRpWant == RP_WORLD));
+}
+
 // ---- the glass pixel shader (glass_PS.hlsl → glass_PS.h, ps_2_b: librw's im2d vertex shader is vs_2_0)
 // The pane is one im2d quad: a draw-list callback sets the shader's constants and librw's im2dOverridePS,
 // the quad is drawn with the glass source bound, a second callback clears the override. The quad's UV is
@@ -12780,6 +12924,7 @@ static GlassConst gGlassConsts[64];
 static int gGlassConstNext = 0;
 static void glassBeginCB(const ImDrawList *, const ImDrawCmd *cmd)
 {
+	if(!glassWorldVisible()){ rw::d3d::im2dOverridePS = nullptr; return; }
 	int slot = (int)(intptr_t)cmd->UserCallbackData;
 	if(slot < 0 || slot >= (int)(sizeof(gGlassConsts) / sizeof(gGlassConsts[0]))) return;
 	rw::d3d::d3ddevice->SetPixelShaderConstantF(1, &gGlassConsts[slot].c[0][0], 9);	// c0 is librw's fog colour
@@ -12790,6 +12935,7 @@ static void glassBeginCB(const ImDrawList *, const ImDrawCmd *cmd)
 // the popup's snapshot (GcFadeCbCopy) and replays them through this one
 static void glassBeginDataCB(const ImDrawList *, const ImDrawCmd *cmd)
 {
+	if(!glassWorldVisible()){ rw::d3d::im2dOverridePS = nullptr; return; }
 	if(!cmd->UserCallbackData) return;
 	rw::d3d::d3ddevice->SetPixelShaderConstantF(1, (const float*)cmd->UserCallbackData, 9);
 	rw::d3d::im2dOverridePS = gGlassPS;
@@ -12806,7 +12952,7 @@ static void glassEndCB(const ImDrawList *, const ImDrawCmd *)
 }
 static bool glassSrcLive()
 {
-	return gGlassSrc && gGlassSrc->raster && ImGui::GetFrameCount() - gGlassSrcFrame <= 1 && gGlassSrcRect.z > gGlassSrcRect.x + 1.0f && gGlassSrcRect.w > gGlassSrcRect.y + 1.0f;
+	return glassWorldVisible() && gGlassSrc && gGlassSrc->raster && ImGui::GetFrameCount() - gGlassSrcFrame <= 1 && gGlassSrcRect.z > gGlassSrcRect.x + 1.0f && gGlassSrcRect.w > gGlassSrcRect.y + 1.0f;
 }
 // one pane through the shader; false = not available (the caller draws the old way).
 // `tintIn` / `tintRim` — the tint density inside and on the bevel, `bevel` in px at 100 % (0 = flat frost only).
@@ -12901,7 +13047,7 @@ static bool glassShaderPane(ImDrawList *dl, const ImVec2 &a, const ImVec2 &b, fl
 // the map behind one patch of glass: the sharp copy plus the four smeared ones
 static void glassPasses(ImDrawList *dl, const ImVec2 &a, const ImVec2 &b, bool vertical)
 {
-	if(!(gGlassSrc && ImGui::GetFrameCount() - gGlassSrcFrame <= 1 && gGlassSrcRect.z > gGlassSrcRect.x && gGlassSrcRect.w > gGlassSrcRect.y)) return;
+	if(!glassSrcLive()) return;
 	if(b.x - a.x < 1.0f || b.y - a.y < 1.0f) return;
 	float ph = (float)(ImGui::GetTime() * 0.25);	// the wave drifts, very slowly: glass that is alive, not boiling
 	float amp = 2.6f * gUiScale;
@@ -12921,7 +13067,9 @@ static void drawGlassRect(ImDrawList *dl, ImVec2 a, ImVec2 b, bool vertical, boo
 		rw::Texture *tex; ImVec4 rect; int frame;
 		~SourceRestore(){ gGlassSrc = tex; gGlassSrcRect = rect; gGlassSrcFrame = frame; }
 	} restore = { gGlassSrc, gGlassSrcRect, gGlassSrcFrame };
-	if(edges && gUiSnap && ImGui::GetFrameCount() - gUiSnapFrame <= 2){
+	bool worldVisible = glassWorldVisible();
+	if(!worldVisible) gGlassSrc = nullptr;
+	if(worldVisible && edges && gUiSnap && ImGui::GetFrameCount() - gUiSnapFrame <= 2){
 		gGlassSrc = gUiSnap;
 		gGlassSrcRect = ImVec4(0, 0, ImGui::GetIO().DisplaySize.x, ImGui::GetIO().DisplaySize.y);
 		gGlassSrcFrame = ImGui::GetFrameCount();
@@ -12932,7 +13080,7 @@ static void drawGlassRect(ImDrawList *dl, ImVec2 a, ImVec2 b, bool vertical, boo
 	float y0 = a.y, y1 = b.y;
 	ImVec4 pc = gSkin->childBg;
 	int fade8 = (int)(gGlassFade * 255.0f + 0.5f); if(fade8 < 0) fade8 = 0; if(fade8 > 255) fade8 = 255;
-	float ta = gGlassTint >= 0.0f ? gGlassTint : (gGlassSrc ? 0.72f : 1.0f);
+	float ta = !worldVisible ? 1.0f : gGlassTint >= 0.0f ? gGlassTint : (gGlassSrc ? 0.72f : 1.0f);
 	bool sh = false;	// the shader drew the pane: its tint and bevel are in there
 	if(concave > 0.0f){	// a menu hanging off the strip: one shape with the strip — the bevel comes down the menu's sides
 				// out of the strip's lower edge, round the fillets; the fillets are painted with the same shape
@@ -13349,6 +13497,8 @@ static void drawUI()
 	}
 	drawHelp();
 	drawConsoleWindow();
+	drawProjectTxd();
+	if(projectTxdBusy()) return;
 	drawRuleRef();
 	drawWin2LodWindow();
 	drawBakeWindow();
@@ -14411,6 +14561,8 @@ static void uiBlit(float dx, float dy, int g, bool additive, bool linear, const 
 
 static void Draw(float timeDelta)
 {
+	projectTxdPoll(); projectTxdRefreshViews();
+	bool txdBusy=projectTxdBusy();
 #ifdef _WIN32
 	// safety net: the drag flag must never stay up (a maximise / restore through the caption buttons can end
 	// the modal loop without WM_EXITSIZEMOVE) — with it stuck the 3D scene stops being rendered at all
@@ -14440,7 +14592,8 @@ static void Draw(float timeDelta)
 #ifdef _WIN32
 	{ static int tick; if(++tick % 30 == 0) captureWindowRect(); }
 #endif
-	if(gEditor && !sk::sizeMoveActive){ if(gData && gProgress.finished && !gProgress.running){ worldRender(); gWorldRenderAt = nowMs(); } if(gEdWin[EW_MODEL] || gEdWin[EW_COL] || gEdWin[EW_IMG]) mvRender(); }	// the editor: the map always (not while a check fills gData), the preview into its own target when its window is open
+	if(txdBusy) {} // Keep other editors and loaders idle while files are replaced.
+	else if(gEditor && !sk::sizeMoveActive){ if(gData && gProgress.finished && !gProgress.running){ worldRender(); gWorldRenderAt = nowMs(); } if(gEdWin[EW_MODEL] || gEdWin[EW_COL] || gEdWin[EW_IMG]) mvRender(); }	// the editor: the map always (not while a check fills gData), the preview into its own target when its window is open
 	else if(gRightOn && (gRpMode == RP_MODEL || gRpMode == RP_COL || (gRpMode == RP_IMG && (gIv.kind == 1 || gIv.kind == 3)))) mvRender();	// the 3D preview into its camera texture first
 	else if(gRightOn && gRpMode == RP_WORLD && gData && gProgress.finished && !gProgress.running) worldRender();
 	ImU32 g0 = gSkin->grad[2];
@@ -14452,7 +14605,7 @@ static void Draw(float timeDelta)
 	mvTestStep();
 	flushGraveyard();	// last frame's draw data is rendered and presented: safe to free textures now
 	ImGui_ImplRW_NewFrame(timeDelta);
-	drawUI();
+	if(txdBusy) drawProjectTxd(); else drawUI();
 	ImGui::EndFrame();
 	GcFadeSafeTex = (ImTextureID)(uintptr_t)(glassSrcLive() ? gGlassSrc : gGlassTex);	// set right before EndFrame replays fading popups: the texture must be the live one
 	ImGui::Render();

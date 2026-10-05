@@ -424,6 +424,35 @@ side limit (halve until ≤ 256 / 512 / 1024) and DXT compression, into `<outdir
 `modloader\inu_check_txd_diet` or `inu_check\txd_diet`. No journal — it is a new folder you can drop into
 modloader. A direct answer to an overloaded streaming budget (QLT-04 / the streaming line in 3D).
 
+### 15.1.1 Project TXD distribution
+
+Project distribution is available at **Settings → Saving → Distribute project TXDs…**.
+The analysis reads DFF material references, including after loading a cached report. Models sharing
+textures stay together. The compact summary shows new TXDs, models, texture data size and dictionaries
+to remove. Expand **Details and TXD selection** for the list and checkboxes.
+
+Choose **Apply to game…**, then select a **backup folder outside the game folder**. A new
+`inu_check_txd_backup_…` folder stores all affected originals, including complete IMGs and paired DIRs
+for III/VC, plus `Restore.ps1` and `Restore-All.bat` for full recovery. This is a backup, not a modloader installation package.
+
+New TXDs are written into the original IMG or beside the original loose file; affected IDEs are updated
+in place. Replaced dictionaries and identified unused TXDs are removed from loaded archives and known
+loose copies. IMGs are repacked without holes; other entries remain byte-for-byte unchanged.
+Preparation and verification finish before any game files are changed. If applying fails, completed
+changes are rolled back from the backup. On success, the checker reloads the game and reports its size change.
+
+System TXDs, `txdp` chains, unreadable models, remaining IDE references, and detected references in scripts,
+configuration files or binaries are retained. Missing literals do not prove the absence of dynamically
+constructed references in third-party scripts; exclude those dictionaries manually. Compressed or
+overlapping IMG entries block repacking of the affected archive. Texture format and pixels are preserved;
+use TXD diet for compression. Splitting alone may increase size due to headers and sector alignment;
+removing unused data and compacting IMGs are what reclaim space.
+
+For a full manual rollback, close the game and INU Check, then run `Restore-All.bat` from the backup folder
+(or `Restore.ps1` if you prefer PowerShell).
+It restores complete original files and removes new TXDs. Any later edits to affected files are also
+replaced by their state before distribution.
+
 ### 15.2 Districts
 
 ![Districts](manual/en/districts.png)

@@ -59,6 +59,7 @@
 - **Windows → LOD** — transfer glowing window geometry and required textures to the distant model.
 - **Checks and diagnostics** — result caching, console, UI inspector (Ctrl+Shift+I), and additional collision viewing modes.
 - **Documentation and translations** — manuals checked against the code, current paths and write limitations documented, RU/EN/ES reviewed.
+- **Project TXD distribution** — apply new dictionaries and IDE references directly to the game, remove unused TXDs and compact IMGs. The chosen folder stores affected originals and a full rollback script; texture quality is preserved.
 
 ## 🔬 What is checked
 

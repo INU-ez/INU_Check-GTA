@@ -20,7 +20,7 @@ if not exist "%OUT%" mkdir "%OUT%"
 set CFLAGS=/nologo /EHsc /MD /W3 /std:c++17 /utf-8 /DRW_D3D9 /DNDEBUG /D_CRT_SECURE_NO_WARNINGS /wd4996 /wd4244 /I"%LIBRW%" /I"%LIBRW%\skeleton" /I"%ROOT%src" /Fo"%OBJ%\\" /Fd"%OBJ%\\"
 if /I "%1"=="debug" ( set CFLAGS=%CFLAGS% /Zi /Od ) else ( set CFLAGS=%CFLAGS% /O2 /Zi )
 
-set SRC=main.cpp imgui_render.cpp fix.cpp util.cpp gamedata.cpp check_txd.cpp check_dff.cpp check_veh.cpp check_col.cpp check_ifp.cpp check_misc.cpp check_handling.cpp check_weapon.cpp check_ped.cpp check_clothes.cpp check_cuts.cpp check_text.cpp check_audio.cpp check_quality.cpp lang.cpp rule_help.cpp txd_edit.cpp runner.cpp district.cpp win2lod.cpp prelit_bake.cpp bake_map.cpp
+set SRC=main.cpp imgui_render.cpp fix.cpp util.cpp gamedata.cpp project_txd_apply.cpp check_txd.cpp check_dff.cpp check_veh.cpp check_col.cpp check_ifp.cpp check_misc.cpp check_handling.cpp check_weapon.cpp check_ped.cpp check_clothes.cpp check_cuts.cpp check_text.cpp check_audio.cpp check_quality.cpp lang.cpp rule_help.cpp txd_edit.cpp runner.cpp district.cpp win2lod.cpp prelit_bake.cpp bake_map.cpp
 set SKEL="%LIBRW%\skeleton\skeleton.cpp" "%LIBRW%\skeleton\win.cpp" "%LIBRW%\skeleton\imgui\imgui.cpp" "%LIBRW%\skeleton\imgui\imgui_draw.cpp" "%LIBRW%\skeleton\imgui\imgui_tables.cpp" "%LIBRW%\skeleton\imgui\imgui_widgets.cpp" "%LIBRW%\skeleton\imgui\imgui_impl_rw.cpp" "%LIBRW%\skeleton\imgui\ImGuizmo.cpp"
 
 rc /nologo /fo "%OBJ%\gtacheck.res" gtacheck.rc

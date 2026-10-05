@@ -20,6 +20,38 @@ static rw::Texture *g_FontTexture;
 static Im2DVertex *g_vertbuf;
 static int g_vertbufSize;
 
+// librw's immediate buffers hold 10000 vertices/indices. A map draw list
+// can exceed both limits; rebase each triangle batch into that buffer.
+static void
+renderUiTriangles(Im2DVertex *vertices, int vertexCount, const ImDrawIdx *indices, unsigned indexCount)
+{
+	rw::uint16 batch[9999];
+	unsigned start = 0;
+	while(start < indexCount){
+		unsigned end = start, lo = 0xFFFFFFFFu, hi = 0;
+		while(end + 2 < indexCount && end - start + 3 <= 9999){
+			unsigned a = indices[end], b = indices[end+1], c = indices[end+2];
+			if(a >= (unsigned)vertexCount || b >= (unsigned)vertexCount || c >= (unsigned)vertexCount) return;
+			unsigned nextLo = lo, nextHi = hi;
+			unsigned values[3] = {a, b, c};
+			for(unsigned v : values){ if(v < nextLo) nextLo = v; if(v > nextHi) nextHi = v; }
+			if(nextHi - nextLo >= 10000) break;
+			lo = nextLo; hi = nextHi; end += 3;
+		}
+		if(end == start){
+			// A triangle may reference distant vertices; pack it explicitly.
+			if(start + 2 >= indexCount) return;
+			Im2DVertex triangle[3] = {vertices[indices[start]], vertices[indices[start+1]], vertices[indices[start+2]]};
+			rw::uint16 ids[3] = {0, 1, 2};
+			rw::im2d::RenderIndexedPrimitive(rw::PRIMTYPETRILIST, triangle, 3, ids, 3);
+			start += 3; continue;
+		}
+		for(unsigned i = start; i < end; i++) batch[i-start] = (rw::uint16)(indices[i] - lo);
+		rw::im2d::RenderIndexedPrimitive(rw::PRIMTYPETRILIST, vertices+lo, hi-lo+1, batch, end-start);
+		start = end;
+	}
+}
+
 #ifdef LIBRW_GLFW
 static const char*
 ImGui_ImplRW_GetClipboardText(void*)
@@ -111,7 +143,6 @@ ImGui_ImplRW_RenderDrawLists(ImDrawData* draw_data)
 	int vtx_offset = 0;
 	for(int n = 0; n < draw_data->CmdListsCount; n++){
 		const ImDrawList *cmd_list = draw_data->CmdLists[n];
-		int idx_offset = 0;
 		for(int i = 0; i < cmd_list->CmdBuffer.Size; i++){
 			const ImDrawCmd *pcmd = &cmd_list->CmdBuffer[i];
 			if(pcmd->UserCallback)
@@ -122,7 +153,6 @@ ImGui_ImplRW_RenderDrawLists(ImDrawData* draw_data)
 				ImVec2 clip_max((pcmd->ClipRect.z - clip_off.x) * clip_scale.x,
 					(pcmd->ClipRect.w - clip_off.y) * clip_scale.y);
 				if(clip_max.x <= clip_min.x || clip_max.y <= clip_min.y){
-					idx_offset += pcmd->ElemCount;
 					continue;
 				}
 #ifdef RW_GL3
@@ -147,11 +177,10 @@ ImGui_ImplRW_RenderDrawLists(ImDrawData* draw_data)
 					rw::SetRenderState(rw::TEXTUREFILTER, tex->getFilter());
 				}else
 					rw::SetRenderStatePtr(rw::TEXTURERASTER, nil);
-				rw::im2d::RenderIndexedPrimitive(rw::PRIMTYPETRILIST,
-					g_vertbuf+vtx_offset, cmd_list->VtxBuffer.Size,
-					cmd_list->IdxBuffer.Data+idx_offset, pcmd->ElemCount);
+				renderUiTriangles(
+					g_vertbuf+vtx_offset+pcmd->VtxOffset, cmd_list->VtxBuffer.Size-pcmd->VtxOffset,
+					cmd_list->IdxBuffer.Data+pcmd->IdxOffset, pcmd->ElemCount);
 			}
-			idx_offset += pcmd->ElemCount;
 		}
 		vtx_offset += cmd_list->VtxBuffer.Size;
 	}
@@ -185,6 +214,9 @@ ImGui_ImplRW_Init(void)
 
 	ImGui::CreateContext();
 	ImGuiIO &io = ImGui::GetIO();
+	// Dense map markers can exceed 64K vertices in one draw list.
+	// Each command then indexes vertices relative to its own VtxOffset.
+	io.BackendFlags |= ImGuiBackendFlags_RendererHasVtxOffset;
 #ifdef LIBRW_GLFW
 	io.GetClipboardTextFn = ImGui_ImplRW_GetClipboardText;
 	io.SetClipboardTextFn = ImGui_ImplRW_SetClipboardText;
